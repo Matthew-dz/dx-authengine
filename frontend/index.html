@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DX-OS System</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome cho Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SweetAlert2 cho thông báo -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        body { background-color: #f4f6f9; }
+        
+        /* Giao diện Login */
+        #login-view {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        /* Giao diện Dashboard */
+        .sidebar {
+            height: 100vh; position: fixed; top: 0; left: 0;
+            width: 260px; background-color: #343a40; padding-top: 70px;
+        }
+        .sidebar a {
+            padding: 15px 25px; text-decoration: none; font-size: 15px;
+            color: #d1d8e0; display: block; transition: 0.3s;
+        }
+        .sidebar a:hover, .sidebar a.active {
+            background-color: #495057; color: #ffffff; border-left: 4px solid #0d6efd;
+        }
+        .main-content { margin-left: 260px; padding: 30px; margin-top: 60px; }
+        .navbar { z-index: 1030; background-color: #ffffff; box-shadow: 0 2px 5px rgba(0,0,0,.05); height: 60px; }
+        .card-custom { border: none; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,.03); margin-bottom: 30px; }
+    </style>
+</head>
+<body>
+
+<!-- ======================= MÀN HÌNH LOGIN ======================= -->
+<div id="login-view">
+    <div class="card login-card p-4">
+        <div class="text-center mb-4">
+            <h3 class="fw-bold text-primary"><i class="fas fa-shield-alt"></i> DX-OS</h3>
+            <p class="text-muted">Đăng nhập vào Hệ thống</p>
+        </div>
+        <form id="loginForm">
+            <div class="mb-3">
+                <label class="form-label fw-bold">Tài khoản</label>
+                <input type="text" class="form-control" id="loginUsername" placeholder="Nhập alice, bob hoặc charlie" required>
+            </div>
+            <div class="mb-4">
+                <label class="form-label fw-bold">Mật khẩu</label>
+                <input type="password" class="form-control" id="loginPassword" placeholder="123" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100 py-2 fw-bold" id="btnLogin">
+                Đăng Nhập
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ======================= MÀN HÌNH DASHBOARD ======================= -->
+<div id="dashboard-view" class="d-none">
+    
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-light fixed-top">
+        <div class="container-fluid px-4">
+            <a class="navbar-brand fw-bold text-primary" href="#">
+                <i class="fas fa-shield-alt me-2"></i> DX-OS SYSTEM
+            </a>
+            <div class="d-flex align-items-center">
+                <span class="text-muted me-3"><i class="fas fa-bell"></i></span>
+                <div class="dropdown">
+                    <a href="#" class="d-flex align-items-center text-decoration-none text-dark dropdown-toggle" data-bs-toggle="dropdown">
+                        <img src="https://ui-avatars.com/api/?name=User&background=0D8ABC&color=fff" id="nav-user-avatar" width="32" height="32" class="rounded-circle me-2">
+                        <div>
+                            <strong id="nav-user-name">User</strong><br>
+                            <small class="text-muted" style="font-size: 0.75em;" id="nav-user-role">Role</small>
+                        </div>
+                    </a>
+                    <ul class="dropdown-menu dropdown-menu-end shadow border-0 mt-2">
+                        <li><a class="dropdown-item text-danger" href="#" id="btnLogout"><i class="fas fa-sign-out-alt me-2"></i> Đăng xuất</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <a href="#" id="nav-orders" class="active"><i class="fas fa-shopping-cart me-2"></i> Quản lý Đơn hàng</a>
+        <a href="#"><i class="fas fa-users me-2"></i> Quản lý User</a>
+        <a href="#"><i class="fas fa-user-shield me-2"></i> Cài đặt Role (RBAC)</a>
+        <a href="#" id="nav-logs"><i class="fas fa-history me-2"></i> Lịch sử Hệ thống</a>
+        <a href="#"><i class="fas fa-cog me-2"></i> Cài đặt</a>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        
+        <!-- TRANG QUẢN LÝ ĐƠN HÀNG -->
+        <div id="page-orders">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="h4 mb-0 text-gray-800 fw-bold">Trạm Xử Lý Hoàn Tiền</h3>
+                <button class="btn btn-sm btn-outline-secondary" onclick="loadOrders()"><i class="fas fa-sync-alt me-1"></i> Làm mới dữ liệu</button>
+            </div>
+
+            <div class="card card-custom">
+                <div class="card-header bg-white border-0 pt-4 pb-0">
+                    <h5 class="card-title fw-bold">Danh sách Đơn hàng (PostgreSQL)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Tên Sản Phẩm</th>
+                                    <th>Giá</th>
+                                    <th>Ngày Mua</th>
+                                    <th>Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orderTableBody">
+                                <tr><td colspan="5" class="text-center text-muted">Đang tải dữ liệu...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TRANG LỊCH SỬ HỆ THỐNG -->
+        <div id="page-logs" class="d-none">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h3 class="h4 mb-0 text-gray-800 fw-bold">Lịch sử Hệ thống</h3>
+            </div>
+
+            <div class="card card-custom">
+                <div class="card-header bg-white border-0 pt-4 pb-0">
+                    <h5 class="card-title fw-bold text-secondary">
+                        <i class="fas fa-clipboard-list me-2"></i> AI Audit Log (Lịch sử Quyết định)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped align-middle">
+                            <thead class="table-dark">
+                                <tr>
+                                    <th style="width: 15%;">Thời gian</th>
+                                    <th style="width: 10%;">Nhân viên</th>
+                                    <th style="width: 15%;">Mã ĐH</th>
+                                    <th style="width: 10%;">Quyết định</th>
+                                    <th style="width: 50%;">Lý do từ Casbin / AI Giải thích</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditLogBody">
+                                <!-- Logs render bằng JS -->
+                            </tbody>
+                        </table>
+                        <div id="noLogsMsg" class="text-center text-muted py-4">Chưa có bản ghi xét duyệt nào.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- Modal Hoàn Tiền -->
+<div class="modal fade" id="refundModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-light">
+        <h5 class="modal-title fw-bold"><i class="fas fa-cog me-2"></i> Xử lý Hoàn Tiền</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-4 text-center">
+        <div class="alert alert-info py-3 mb-4">
+            Xác nhận hoàn tiền cho đơn hàng <br>
+            <strong id="modalOrderId" class="text-primary fs-3"></strong>
+        </div>
+        
+        <input type="hidden" id="hiddenOrderId">
+        <p class="text-muted"><i class="fas fa-shield-alt"></i> Hệ thống sẽ tự động sử dụng tài khoản <strong>đang đăng nhập</strong> của bạn để đánh giá quyền truy cập.</p>
+        
+      </div>
+      <div class="modal-footer justify-content-center">
+        <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Hủy</button>
+        <button type="button" class="btn btn-primary px-4 fw-bold" id="btnConfirmRefund">
+            <i class="fas fa-paper-plane me-2"></i> Chạy Xét Duyệt
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    // --- KHỞI TẠO ---
+    const loginView = document.getElementById('login-view');
+    const dashboardView = document.getElementById('dashboard-view');
+    const tbody = document.getElementById('orderTableBody');
+    const modal = new bootstrap.Modal(document.getElementById('refundModal'));
+    let auditLogs = []; // Lưu log toàn cục
+
+    // --- KIỂM TRA ĐĂNG NHẬP ---
+    function checkLoginState() {
+        const currentUser = localStorage.getItem('currentUser');
+        if (currentUser) {
+            const userObj = JSON.parse(currentUser);
+            loginView.classList.add('d-none');
+            dashboardView.classList.remove('d-none');
+            
+            // Cập nhật giao diện Navbar
+            document.getElementById('nav-user-name').innerText = userObj.name;
+            document.getElementById('nav-user-role').innerText = userObj.role;
+            document.getElementById('nav-user-avatar').src = `https://ui-avatars.com/api/?name=${userObj.name}&background=0D8ABC&color=fff`;
+            
+            // Tải dữ liệu
+            loadOrders();
+        } else {
+            loginView.classList.remove('d-none');
+            dashboardView.classList.add('d-none');
+        }
+    }
+
+    // --- XỬ LÝ LOGIN ---
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const usernameInput = document.getElementById('loginUsername').value;
+        const passwordInput = document.getElementById('loginPassword').value;
+        const btnLogin = document.getElementById('btnLogin');
+        
+        btnLogin.disabled = true;
+        btnLogin.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
+        
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/v1/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: usernameInput, password: passwordInput })
+            });
+            
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('currentUser', JSON.stringify(data));
+                
+                Swal.fire({
+                    icon: 'success', title: 'Đăng nhập thành công!', toast: true,
+                    position: 'top-end', showConfirmButton: false, timer: 2000
+                });
+                
+                checkLoginState();
+            } else {
+                const err = await res.json();
+                Swal.fire({ icon: 'error', title: 'Thất bại', text: err.detail });
+            }
+        } catch (error) {
+            Swal.fire({ icon: 'error', title: 'Lỗi', text: 'Không thể kết nối đến Backend!' });
+        } finally {
+            btnLogin.disabled = false;
+            btnLogin.innerText = 'Đăng Nhập';
+        }
+    });
+
+    // --- XỬ LÝ LOGOUT ---
+    document.getElementById('btnLogout').addEventListener('click', (e) => {
+        e.preventDefault();
+        localStorage.removeItem('currentUser');
+        checkLoginState();
+    });
+
+    // --- NAVIGATION LOGIC ---
+    const navOrders = document.getElementById('nav-orders');
+    const navLogs = document.getElementById('nav-logs');
+    const pageOrders = document.getElementById('page-orders');
+    const pageLogs = document.getElementById('page-logs');
+
+    navOrders.addEventListener('click', (e) => {
+        e.preventDefault();
+        navOrders.classList.add('active'); navLogs.classList.remove('active');
+        pageOrders.classList.remove('d-none'); pageLogs.classList.add('d-none');
+    });
+
+    navLogs.addEventListener('click', (e) => {
+        e.preventDefault();
+        navLogs.classList.add('active'); navOrders.classList.remove('active');
+        pageLogs.classList.remove('d-none'); pageOrders.classList.add('d-none');
+    });
+
+    // --- RENDER LOGS ---
+    function renderLogs() {
+        const logBody = document.getElementById('auditLogBody');
+        const noLogsMsg = document.getElementById('noLogsMsg');
+        
+        if (auditLogs.length === 0) {
+            noLogsMsg.style.display = 'block'; logBody.innerHTML = ''; return;
+        }
+        
+        noLogsMsg.style.display = 'none';
+        logBody.innerHTML = '';
+        
+        auditLogs.forEach(log => {
+            const statusBadge = log.is_approved 
+                ? '<span class="badge bg-success shadow-sm"><i class="fas fa-check-circle"></i> ALLOW</span>' 
+                : '<span class="badge bg-danger shadow-sm"><i class="fas fa-ban"></i> DENY</span>';
+                
+            let userBadgeClass = 'bg-secondary';
+            if (log.user === 'alice') userBadgeClass = 'bg-primary';
+            if (log.user === 'bob') userBadgeClass = 'bg-info text-dark';
+            
+            const row = `
+                <tr>
+                    <td class="text-muted" style="font-size: 0.9em;"><i class="far fa-clock me-1"></i> ${log.timeStr}</td>
+                    <td><span class="badge ${userBadgeClass} w-100">${log.user.toUpperCase()}</span></td>
+                    <td class="fw-bold text-primary">#${log.orderId}</td>
+                    <td class="text-center">${statusBadge}</td>
+                    <td><div class="p-2 border rounded bg-light" style="font-size: 0.95em;">${log.reason}</div></td>
+                </tr>
+            `;
+            logBody.insertAdjacentHTML('afterbegin', row); // Thêm vào đầu
+        });
+    }
+
+    // --- ORDERS LOGIC ---
+    async function loadOrders() {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> Đang tải...</td></tr>';
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/v1/orders');
+            const data = await res.json();
+            
+            tbody.innerHTML = '';
+            data.forEach(o => {
+                const dateObj = new Date(o.order_date);
+                const dateStr = dateObj.toLocaleDateString('vi-VN') + ' ' + dateObj.toLocaleTimeString('vi-VN');
+                
+                tbody.innerHTML += `
+                    <tr>
+                        <td class="fw-bold text-primary">#${o.id}</td>
+                        <td class="text-truncate" style="max-width: 250px;" title="${o.product_name}">${o.product_name}</td>
+                        <td class="text-success fw-bold">$${o.price}</td>
+                        <td>${dateStr}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary shadow-sm" onclick="openModal(${o.id})">
+                                <i class="fas fa-undo"></i> Hoàn tiền
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Lỗi kết nối Backend!</td></tr>';
+        }
+    }
+
+    function openModal(id) {
+        document.getElementById('modalOrderId').innerText = id;
+        document.getElementById('hiddenOrderId').value = id;
+        modal.show();
+    }
+
+    // --- XỬ LÝ HOÀN TIỀN VỚI TÀI KHOẢN ĐÃ LOGIN ---
+    document.getElementById('btnConfirmRefund').addEventListener('click', async () => {
+        // Lấy username từ localStorage (không cần qua Dropdown nữa)
+        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+        if (!currentUser) {
+            Swal.fire('Lỗi', 'Phiên đăng nhập đã hết hạn', 'error');
+            return;
+        }
+
+        const username = currentUser.username;
+        const orderId = document.getElementById('hiddenOrderId').value;
+        const btn = document.getElementById('btnConfirmRefund');
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang chờ Hệ thống kiểm tra...';
+        
+        try {
+            const response = await fetch('http://127.0.0.1:8000/api/v1/refund', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    username: username, // Tự động inject username
+                    order_id: parseInt(orderId)
+                })
+            });
+            
+            const data = await response.json();
+            modal.hide();
+            
+            // Lưu kết quả vào mảng Audit Logs toàn cục
+            const now = new Date();
+            auditLogs.push({
+                timeStr: now.toLocaleTimeString('vi-VN') + ' ' + now.toLocaleDateString('vi-VN'),
+                user: username,
+                orderId: orderId,
+                is_approved: data.is_approved,
+                reason: data.reason
+            });
+            
+            renderLogs();
+            
+            // Hiện SweetAlert2
+            if (data.is_approved) {
+                Swal.fire({ icon: 'success', title: 'ĐÃ DUYỆT!', text: data.reason });
+            } else {
+                Swal.fire({ icon: 'error', title: 'TỪ CHỐI!', text: data.reason });
+            }
+        } catch (err) {
+            Swal.fire({ icon: 'error', title: 'Lỗi', text: 'Không thể kết nối với Backend!' });
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-paper-plane me-2"></i> Chạy Xét Duyệt';
+        }
+    });
+
+    // Chạy kiểm tra login khi trang vừa bật lên
+    checkLoginState();
+</script>
+</body>
+</html>
