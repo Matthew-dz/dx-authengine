@@ -15,6 +15,7 @@ enforcer.add_function("float", float)
 class RefundDecision(BaseModel):
     is_approved: bool
     reason: str
+    email_template: str
 
 def check_abac_policy(username: str, resource: str, action: str, order_days_old: int) -> bool:
     """
@@ -23,14 +24,16 @@ def check_abac_policy(username: str, resource: str, action: str, order_days_old:
     """
     return enforcer.enforce(username, resource, action, order_days_old)
 
-async def process_refund_request(username: str, resource: str, action: str, order_days_old: int) -> RefundDecision:
+async def process_refund_request(username: str, resource: str, action: str, order_days_old: int, customer_email: str, customer_name: str) -> RefundDecision:
     # Bước 1: Hệ thống kiểm tra luật cứng (Symbolic / ABAC) bằng Casbin trước
     is_allowed = check_abac_policy(username, resource, action, order_days_old)
     
     # Bước 2: Truyền kết quả luật cứng cho AI (Neuro) để sinh ra phản hồi tự nhiên
     prompt = f"""
 Bạn là hệ thống xét duyệt hoàn tiền tự động. Hãy xử lý yêu cầu hoàn tiền sau:
-- User: {username}
+- Nhân viên duyệt (nội bộ): {username}
+- Tên Khách hàng: {customer_name}
+- Email Khách hàng: {customer_email}
 - Resource: {resource}
 - Action: {action}
 - Order days old: {order_days_old} ngày
@@ -39,12 +42,14 @@ Hệ thống bảo mật ABAC đã kiểm tra luật và kết quả là: {"ĐƯ
 
 Nhiệm vụ của bạn:
 1. is_approved: Phải bằng {str(is_allowed).lower()}.
-2. reason: Hãy viết 1-2 câu giải thích thân thiện bằng tiếng Việt cho người dùng biết tại sao họ được duyệt hoặc bị từ chối dựa trên số ngày của đơn hàng.
+2. reason: Hãy viết 1-2 câu giải thích cho nhân viên ({username}) biết tại sao họ duyệt hoặc từ chối đơn hàng này (dựa trên số ngày).
+4. email_template: Viết một đoạn email ĐỂ GỬI CHO KHÁCH HÀNG ({customer_email}). Bắt buộc chào tên khách hàng (VD: Xin chào anh/chị {customer_name},...), TUYỆT ĐỐI KHÔNG chào tên nhân viên nội bộ ({username}). Email phải thân thiện, thông báo kết quả duyệt/từ chối và lý do.
 
 Hãy trả về DUY NHẤT một chuỗi JSON chuẩn (không kèm theo markdown như ```json hay bất kỳ văn bản nào khác) với cấu trúc:
 {{
     "is_approved": true/false,
-    "reason": "..."
+    "reason": "...",
+    "email_template": "..."
 }}
 """
     
