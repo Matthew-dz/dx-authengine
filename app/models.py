@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
-from database import Base
+from datetime import datetime
+from app.database import Base
 
 class Employee(Base):
     __tablename__ = "employees"
@@ -35,5 +36,15 @@ class Order(Base):
     price = Column(Float)
     order_date = Column(DateTime)
     customer_id = Column(Integer, ForeignKey("customers.id"))
+    status = Column(String, default="PENDING")
     
     customer = relationship("Customer", back_populates="orders")
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"))
+    employee_username = Column(String)
+    decision = Column(String)
+    reason = Column(String)
+    created_at = Column(DateTime, default=datetime.utcnow)

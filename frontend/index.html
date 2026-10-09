@@ -126,7 +126,7 @@
                         <table class="table table-hover align-middle mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th>ID</th>
+                                    <th>STT</th>
                                     <th>Tên Sản Phẩm</th>
                                     <th>Khách hàng</th>
                                     <th>Giá</th>
@@ -205,6 +205,22 @@
                 </div>
             </div>
 
+            <div class="row mb-3">
+                <div class="col-md-3">
+                    <input type="text" id="logSearch" class="form-control" placeholder="Tìm mã/tên SP">
+                </div>
+                <div class="col-md-3">
+                    <input type="text" id="logCustomer" class="form-control" placeholder="Tên khách hàng">
+                </div>
+                <div class="col-md-3">
+                    <input type="text" id="logEmployee" class="form-control" placeholder="Tên nhân viên">
+                </div>
+                <div class="col-md-3 d-flex gap-2">
+                    <button class="btn btn-primary fw-bold flex-grow-1" onclick="loadLogs()"><i class="fas fa-filter"></i> Lọc Dữ Liệu</button>
+                    <button class="btn btn-secondary fw-bold" onclick="clearLogFilters()"><i class="fas fa-eraser"></i> Xóa Lọc</button>
+                </div>
+            </div>
+
             <div class="card card-custom">
                 <div class="card-header bg-white border-0 pt-4 pb-0">
                     <h5 class="card-title fw-bold text-secondary">
@@ -219,7 +235,8 @@
                                     <th style="width: 10%;">Nhân viên</th>
                                     <th style="width: 15%;" class="text-center">Mã ĐH</th>
                                     <th style="width: 10%;" class="text-center">Quyết định</th>
-                                    <th style="width: 50%;" class="text-center">Lý do</th>
+                                    <th style="width: 40%;" class="text-center">Lý do</th>
+                                    <th style="width: 10%;" class="text-center" id="thAction">Hành động</th>
                                 </tr>
                             </thead>
                             <tbody id="auditLogBody">
@@ -527,6 +544,7 @@
         } else if (tabId === 'nav-logs') {
             navLogs.classList.add('active');
             pageLogs.classList.remove('d-none');
+            loadLogs();
         } else if (tabId === 'nav-settings' && navSettings) {
             navSettings.classList.add('active');
             pageSettings.classList.remove('d-none');
@@ -877,12 +895,12 @@
             return;
         }
         
-        let csvStr = "\uFEFFThời gian,Nhân viên,Mã Đơn,Trạng thái,Lý do\n";
+        let csvStr = "\uFEFFThời gian,Nhân viên,Mã Đơn,Tên Sản Phẩm,Trạng thái,Lý do\n";
         
         auditLogs.forEach(log => {
             const statusStr = log.is_approved ? "ALLOW" : "DENY";
             const reasonEscaped = log.reason.replace(/"/g, '""');
-            csvStr += `"${log.timeStr}","${log.user}","${log.orderId}","${statusStr}","${reasonEscaped}"\n`;
+            csvStr += `"${log.timeStr}","${log.user}","${log.orderId}","${log.productName}","${statusStr}","${reasonEscaped}"\n`;
         });
         
         const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
@@ -895,17 +913,64 @@
         document.body.removeChild(link);
     }
 
+    function clearLogFilters() {
+        if (document.getElementById('logSearch')) document.getElementById('logSearch').value = '';
+        if (document.getElementById('logCustomer')) document.getElementById('logCustomer').value = '';
+        if (document.getElementById('logEmployee')) document.getElementById('logEmployee').value = '';
+        loadLogs();
+    }
+
     // --- RENDER LOGS ---
-    function renderLogs() {
+    async function loadLogs() {
         const logBody = document.getElementById('auditLogBody');
         const noLogsMsg = document.getElementById('noLogsMsg');
         
+        try {
+            const search = document.getElementById('logSearch') ? document.getElementById('logSearch').value : '';
+            const customer = document.getElementById('logCustomer') ? document.getElementById('logCustomer').value : '';
+            const employee = document.getElementById('logEmployee') ? document.getElementById('logEmployee').value : '';
+            
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (customer) params.append('customer', customer);
+            if (employee) params.append('employee', employee);
+            
+            const queryString = params.toString() ? '?' + params.toString() : '';
+            const res = await fetch('http://127.0.0.1:8000/api/v1/audit-logs' + queryString);
+            const data = await res.json();
+            auditLogs = data.map(log => {
+                const dateObj = new Date(log.created_at);
+                const timeStr = dateObj.toLocaleTimeString('vi-VN') + ' ' + dateObj.toLocaleDateString('vi-VN');
+                return {
+                    id: log.id,
+                    timeStr: timeStr,
+                    user: log.employee_username,
+                    orderId: log.order_id,
+                    productName: log.product_name,
+                    is_approved: log.decision === 'ALLOW',
+                    reason: log.reason
+                };
+            });
+            updateChart();
+            updateOrdersChart();
+        } catch (err) {
+            console.error(err);
+            return;
+        }
+
         if (auditLogs.length === 0) {
             noLogsMsg.style.display = 'block'; logBody.innerHTML = ''; return;
         }
         
         noLogsMsg.style.display = 'none';
         logBody.innerHTML = '';
+        
+        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+        const isAdmin = currentUser && currentUser.role && currentUser.role.toLowerCase() === 'admin';
+        const thAction = document.getElementById('thAction');
+        if (thAction) {
+            thAction.style.display = isAdmin ? 'table-cell' : 'none';
+        }
         
         auditLogs.forEach(log => {
             const statusBadge = log.is_approved 
@@ -916,16 +981,19 @@
             if (log.user === 'alice') userBadgeClass = 'bg-primary';
             if (log.user === 'bob') userBadgeClass = 'bg-info text-dark';
             
+            const actionTd = isAdmin ? `<td class="text-center"><button class="btn btn-sm btn-outline-warning shadow-sm" onclick="changeDecision(${log.id})"><i class="fas fa-edit"></i> Đổi</button></td>` : `<td style="display:none;"></td>`;
+            
             const row = `
                 <tr>
                     <td class="text-muted" style="font-size: 0.9em;"><i class="far fa-clock me-1"></i> ${log.timeStr}</td>
                     <td><span class="badge ${userBadgeClass} w-100">${log.user.toUpperCase()}</span></td>
-                    <td class="fw-bold text-primary text-center">#${log.orderId}</td>
+                    <td class="fw-bold text-primary text-center" title="${log.productName}">#${log.orderId}</td>
                     <td class="text-center">${statusBadge}</td>
                     <td class="text-center"><div class="p-2 border rounded bg-light" style="font-size: 0.95em;">${log.reason}</div></td>
+                    ${actionTd}
                 </tr>
             `;
-            logBody.insertAdjacentHTML('afterbegin', row); // Thêm vào đầu
+            logBody.insertAdjacentHTML('beforeend', row);
         });
     }
 
@@ -942,7 +1010,7 @@
             let hasRenderedEligible = false;
             let hasRenderedExpired = false;
 
-            data.forEach(o => {
+            data.forEach((o, index) => {
                 if (o.is_eligible && !hasRenderedEligible) {
                     tbody.innerHTML += `<tr class="table-success text-success"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-check-circle me-2"></i> NHÓM ĐỦ ĐIỀU KIỆN HOÀN TIỀN</td></tr>`;
                     hasRenderedEligible = true;
@@ -957,7 +1025,7 @@
                 
                 tbody.innerHTML += `
                     <tr class="${!o.is_eligible ? 'table-light text-muted' : ''}">
-                        <td class="fw-bold text-primary">#${o.id}</td>
+                        <td class="fw-bold text-primary">${index + 1}</td>
                         <td class="text-truncate" style="max-width: 250px;" title="${o.product_name}">${o.product_name}</td>
                         <td class="${!o.is_eligible ? 'text-muted' : 'text-secondary'}" style="font-size: 0.9em;">
                             <div class="fw-bold text-dark">${o.customer_name || 'N/A'}</div>
@@ -1015,16 +1083,7 @@
             modal.hide();
             
             // Lưu kết quả vào mảng Audit Logs toàn cục
-            const now = new Date();
-            auditLogs.push({
-                timeStr: now.toLocaleTimeString('vi-VN') + ' ' + now.toLocaleDateString('vi-VN'),
-                user: username,
-                orderId: orderId,
-                is_approved: data.is_approved,
-                reason: data.reason
-            });
-            
-            renderLogs();
+            loadLogs();
             updateChart();
             updateOrdersChart();
             
@@ -1050,6 +1109,8 @@
                 title: data.is_approved ? 'ĐÃ DUYỆT!' : 'TỪ CHỐI!',
                 html: htmlContent,
                 width: '600px'
+            }).then(() => {
+                loadOrders();
             });
         } catch (err) {
             Swal.fire({ icon: 'error', title: 'Lỗi', text: 'Không thể kết nối với Backend!' });
@@ -1061,6 +1122,65 @@
 
     // Chạy kiểm tra login khi trang vừa bật lên
     checkLoginState();
+
+    async function changeDecision(logId) {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+        if (!currentUser || currentUser.role.toLowerCase() !== 'admin') {
+            Swal.fire('Lỗi', 'Chỉ admin mới có quyền!', 'error');
+            return;
+        }
+
+        const { value: formValues } = await Swal.fire({
+            title: 'Thay đổi quyết định',
+            html: `
+                <select id="swal-decision" class="form-select mb-3">
+                    <option value="ALLOW">Chấp nhận (ALLOW)</option>
+                    <option value="DENY">Từ chối (DENY)</option>
+                </select>
+                <textarea id="swal-reason" class="form-control" rows="3" placeholder="Nhập lý do thay đổi quyết định..."></textarea>
+            `,
+            focusConfirm: false,
+            showCancelButton: true,
+            confirmButtonText: 'Cập nhật',
+            cancelButtonText: 'Hủy',
+            preConfirm: () => {
+                const decision = document.getElementById('swal-decision').value;
+                const reason = document.getElementById('swal-reason').value.trim();
+                if (!reason) {
+                    Swal.showValidationMessage('Vui lòng nhập lý do');
+                    return false;
+                }
+                return { decision, reason };
+            }
+        });
+
+        if (formValues) {
+            try {
+                Swal.fire({ title: 'Đang xử lý...', allowOutsideClick: false });
+                Swal.showLoading();
+                const res = await fetch(`http://127.0.0.1:8000/api/v1/audit-logs/${logId}/decision`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        requester: currentUser.username,
+                        new_decision: formValues.decision,
+                        reason: formValues.reason
+                    })
+                });
+
+                if (res.ok) {
+                    Swal.fire('Thành công!', 'Quyết định đã được thay đổi và email đã được gửi.', 'success');
+                    loadLogs();
+                } else {
+                    const err = await res.json();
+                    Swal.fire('Lỗi', err.detail || 'Không thể thay đổi quyết định', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                Swal.fire('Lỗi', 'Không thể kết nối đến máy chủ', 'error');
+            }
+        }
+    }
 </script>
 </body>
 </html>

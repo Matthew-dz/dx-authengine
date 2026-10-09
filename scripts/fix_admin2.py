@@ -1,6 +1,6 @@
 import hashlib
-from database import SessionLocal
-from models import Employee
+from app.database import SessionLocal
+from app.models import Employee
 
 db = SessionLocal()
 admin = db.query(Employee).filter(Employee.username == 'admin').first()

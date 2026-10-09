@@ -1,5 +1,4 @@
 p, admin, transaction, refund, 999999
 p, staff_sales, transaction, refund, 30
 g, bob, staff_sales
-g, Rayden, admin
-g, rayden, staff_sales
+g, rayden, admin

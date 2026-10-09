@@ -10,7 +10,7 @@ class RefundDecision(BaseModel):
     is_approved: bool
     reason: str
 
-from agent import check_abac_policy
+from app.agent import check_abac_policy
 
 async def t():
     agent = Agent(config=LocalAgentConfig(system_instructions='Use the tool.', tools=[check_abac_policy], api_key=os.getenv('GEMINI_API_KEY')))

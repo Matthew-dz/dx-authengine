@@ -1,11 +1,14 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from typing import Optional
+from sqlalchemy import or_
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime
-import models
-from database import engine, SessionLocal
-from agent import process_refund_request, RefundDecision, enforcer
+from app import models
+from app.database import engine, SessionLocal
+from app.agent import process_refund_request, RefundDecision, enforcer
+from app.email_service import send_refund_email
 import hashlib
 
 def get_password_hash(password: str) -> str:
@@ -53,6 +56,11 @@ class ChangePasswordRequest(BaseModel):
     username: str
     old_password: str
     new_password: str
+
+class AuditLogUpdateDecisionRequest(BaseModel):
+    requester: str
+    new_decision: str
+    reason: str
 
 class RefundAPIResponse(BaseModel):
     is_approved: bool
@@ -166,7 +174,7 @@ def delete_employee(emp_id: int, db: Session = Depends(get_db)):
 
 @app.get("/api/v1/orders")
 def get_orders(db: Session = Depends(get_db)):
-    orders_with_customers = db.query(models.Order, models.Customer).join(models.Customer, models.Order.customer_id == models.Customer.id).order_by(models.Order.id.desc()).all()
+    orders_with_customers = db.query(models.Order, models.Customer).join(models.Customer, models.Order.customer_id == models.Customer.id).filter(models.Order.status == "PENDING").order_by(models.Order.id.desc()).all()
     
     # Tính toán rủi ro gian lận
     customer_counts = {}
@@ -200,7 +208,7 @@ def get_orders(db: Session = Depends(get_db)):
     return result
 
 @app.post("/api/v1/refund", response_model=RefundAPIResponse)
-async def request_refund(req: RefundRequest, db: Session = Depends(get_db)):
+async def request_refund(req: RefundRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     try:
         # 1. Lấy thông tin đơn hàng từ Database
         order_info = db.query(models.Order, models.Customer).join(models.Customer, models.Order.customer_id == models.Customer.id).filter(models.Order.id == req.order_id).first()
@@ -222,10 +230,26 @@ async def request_refund(req: RefundRequest, db: Session = Depends(get_db)):
             customer_name=customer.full_name
         )
         
+        background_tasks.add_task(send_refund_email, customer.email, 'Thông báo kết quả xử lý hoàn tiền - DX-AuthEngine', decision.email_template)
+        
         # 4. Kiểm tra lịch sử gian lận
         fraud_count = db.query(models.Order).filter(models.Order.customer_id == customer.id).count()
         fraud_warning = fraud_count >= 3
         
+        if decision.is_approved:
+            order.status = "REFUNDED"
+        else:
+            order.status = "REJECTED"
+            
+        audit_log = models.AuditLog(
+            order_id=req.order_id,
+            employee_username=req.username,
+            decision='ALLOW' if decision.is_approved else 'DENY',
+            reason=decision.reason
+        )
+        db.add(audit_log)
+        db.commit()
+
         return RefundAPIResponse(
             is_approved=decision.is_approved,
             reason=decision.reason,
@@ -238,6 +262,75 @@ async def request_refund(req: RefundRequest, db: Session = Depends(get_db)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/v1/audit-logs")
+def get_audit_logs(
+    search: Optional[str] = None,
+    customer: Optional[str] = None,
+    employee: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(models.AuditLog, models.Order, models.Customer) \
+        .join(models.Order, models.AuditLog.order_id == models.Order.id) \
+        .join(models.Customer, models.Order.customer_id == models.Customer.id)
+
+    if search:
+        if search.isdigit():
+            query = query.filter(
+                or_(
+                    models.Order.id == int(search),
+                    models.Order.product_name.ilike(f"%{search}%")
+                )
+            )
+        else:
+            query = query.filter(models.Order.product_name.ilike(f"%{search}%"))
+            
+    if customer:
+        query = query.filter(models.Customer.full_name.ilike(f"%{customer}%"))
+        
+    if employee:
+        query = query.filter(models.AuditLog.employee_username.ilike(f"%{employee}%"))
+
+    logs = query.order_by(models.AuditLog.created_at.desc()).all()
+    
+    result = []
+    for log, order, cust in logs:
+        result.append({
+            "id": log.id,
+            "order_id": log.order_id,
+            "product_name": order.product_name,
+            "employee_username": log.employee_username,
+            "decision": log.decision,
+            "reason": log.reason,
+            "created_at": log.created_at.isoformat()
+        })
+    return result
+
+@app.put("/api/v1/audit-logs/{log_id}/decision")
+def update_audit_log_decision(log_id: int, req: AuditLogUpdateDecisionRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if req.requester.lower() != "admin":
+        raise HTTPException(status_code=403, detail="Chỉ admin mới có quyền thay đổi quyết định.")
+    
+    log = db.query(models.AuditLog).filter(models.AuditLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="Không tìm thấy log")
+        
+    order = db.query(models.Order).filter(models.Order.id == log.order_id).first()
+    customer = db.query(models.Customer).filter(models.Customer.id == order.customer_id).first()
+    
+    old_decision = log.decision
+    log.decision = req.new_decision
+    log.reason = f"[Cập nhật bởi {req.requester} từ {old_decision} -> {req.new_decision}] {req.reason}"
+    db.commit()
+    
+    email_subject = "Cập nhật kết quả xử lý hoàn tiền - DX-AuthEngine"
+    if req.new_decision == "ALLOW":
+        email_body = f"Kính gửi {customer.full_name},\n\nYêu cầu hoàn tiền cho đơn hàng {order.product_name} của bạn đã được Admin phê duyệt (thay đổi quyết định).\nLý do: {req.reason}\n\nTrân trọng,\nĐội ngũ CSKH."
+    else:
+        email_body = f"Kính gửi {customer.full_name},\n\nYêu cầu hoàn tiền cho đơn hàng {order.product_name} của bạn đã bị từ chối.\nLý do: {req.reason}\n\nTrân trọng,\nĐội ngũ CSKH."
+        
+    background_tasks.add_task(send_refund_email, customer.email, email_subject, email_body)
+    return {"status": "success", "message": "Cập nhật quyết định thành công"}
 
 @app.get("/api/v1/roles")
 def get_roles():

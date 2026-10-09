@@ -1,7 +1,7 @@
 import sys
 import os
-from database import SessionLocal
-from models import Employee
+from app.database import SessionLocal
+from app.models import Employee
 
 db = SessionLocal()
 employees = db.query(Employee).all()

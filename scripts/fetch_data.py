@@ -1,8 +1,8 @@
 import requests
 import random
 from datetime import datetime, timedelta
-from database import SessionLocal, engine
-from models import Base, Order, Customer, Employee
+from app.database import SessionLocal, engine
+from app.models import Base, Order, Customer, Employee
 import hashlib
 
 def get_password_hash(password: str) -> str:

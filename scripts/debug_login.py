@@ -1,6 +1,6 @@
 import hashlib
-from database import SessionLocal
-import models
+from app.database import SessionLocal
+from app import models
 
 def get_password_hash(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
