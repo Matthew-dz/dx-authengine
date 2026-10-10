@@ -14,7 +14,8 @@ from app.agent import enforcer, Subject, Resource
 from app.schemas.employee import EmployeeProfileResponse
 from app.schemas.common import StandardResponse
 
-router = APIRouter(tags=["Auth"])
+router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
+legacy_router = APIRouter(prefix="/api/v1", tags=["Auth"])
 
 
 class LoginRequest(BaseModel):
@@ -38,7 +39,7 @@ class UIPermissionsResponse(BaseModel):
 
 
 @router.post("/login", response_model=StandardResponse[TokenData])
-@router.post("/auth/login", response_model=StandardResponse[TokenData])
+@legacy_router.post("/login", response_model=StandardResponse[TokenData], include_in_schema=False)
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.Employee).filter(models.Employee.username == req.username.lower()).first()
     if not user or not verify_password(req.password, user.password):
@@ -48,13 +49,13 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     token_data = TokenData(access_token=access_token, token_type="bearer")
     return StandardResponse(
         success=True,
-        message="Đăng nhập thành công",
+        message="Login success",
         data=token_data
     )
 
 
 @router.get("/me", response_model=StandardResponse[EmployeeProfileResponse])
-@router.get("/auth/me", response_model=StandardResponse[EmployeeProfileResponse])
+@legacy_router.get("/auth/me", response_model=StandardResponse[EmployeeProfileResponse], include_in_schema=False)
 def get_my_profile(current_user: models.Employee = Depends(get_current_user)):
     """
     Trả về profile của user đang đăng nhập theo chuẩn Unified API.
@@ -69,7 +70,8 @@ def get_my_profile(current_user: models.Employee = Depends(get_current_user)):
 
 
 @router.get("/my-permissions", response_model=StandardResponse[UIPermissionsResponse])
-@router.get("/auth/my-permissions", response_model=StandardResponse[UIPermissionsResponse])
+@legacy_router.get("/auth/my-permissions", response_model=StandardResponse[UIPermissionsResponse], include_in_schema=False)
+@legacy_router.get("/my-permissions", response_model=StandardResponse[UIPermissionsResponse], include_in_schema=False)
 def get_my_permissions(current_user: models.Employee = Depends(get_current_user)):
     """
     API Cấu hình UI Động (Bước 5.4 - Unified Experience).

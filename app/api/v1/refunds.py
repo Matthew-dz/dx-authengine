@@ -18,7 +18,7 @@ from app.schemas import (
 )
 from app.schemas.common import StandardResponse
 
-router = APIRouter(prefix="/refunds", tags=["Refunds"])
+router = APIRouter(prefix="/api/v1/refunds", tags=["Refunds"])
 
 
 class DirectRefundRequest(BaseModel):

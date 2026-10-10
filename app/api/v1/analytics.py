@@ -7,7 +7,7 @@ from app.services.analytics_service import AnalyticsService
 from app.schemas import OverviewStatsResponse, EmployeePerformanceResponse, DashboardStatsResponse
 from app.schemas.common import StandardResponse
 
-router = APIRouter(prefix="/analytics", tags=["Analytics"])
+router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 
 
 @router.get("/dashboard", response_model=StandardResponse[DashboardStatsResponse])

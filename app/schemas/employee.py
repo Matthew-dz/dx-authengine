@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from app.schemas.common import StandardResponse
 
 
 class EmployeeResponse(BaseModel):
@@ -9,6 +10,11 @@ class EmployeeResponse(BaseModel):
     full_name: Optional[str] = None
     role: str
     position: Optional[str] = None
+    hometown: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    email: Optional[str] = None
+    hire_date: Optional[str] = None
     is_active: bool = True
 
     model_config = ConfigDict(from_attributes=True)
@@ -76,3 +82,13 @@ class EmployeePerformanceResponse(BaseModel):
     employee_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
+ 
+ 
+__all__ = [
+    "StandardResponse",
+    "EmployeeResponse",
+    "EmployeeProfileResponse",
+    "CustomerResponse",
+    "EmployeeUpdate",
+    "EmployeePerformanceResponse",
+]

@@ -11,7 +11,7 @@ from app.email_service import send_refund_email
 from app.security import get_current_user
 from app.schemas.common import StandardResponse
 
-router = APIRouter(prefix="/audit-logs", tags=["Audit Logs"])
+router = APIRouter(prefix="/api/v1/audit-logs", tags=["Audit Logs"])
 
 
 class AuditLogUpdateDecisionRequest(BaseModel):

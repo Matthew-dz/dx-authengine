@@ -1,25 +1,22 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import models
 from app.database import engine
 from app.agent import enforcer
-from app.schemas.common import StandardResponse
 
-# Import router modules theo chuẩn Unified API (Bước 5.1)
-from app.api.v1 import (
-    refunds,
-    auth,
-    users,
-    employees,
-    analytics,
-    ai,
-    orders,
-    audit_logs,
-    system
-)
+# Import tất cả các router từ app/api/v1/
+from app.api.v1.auth import router as auth_router, legacy_router as auth_legacy_router
+from app.api.v1.users import router as users_router, legacy_router as users_legacy_router
+from app.api.v1.employees import router as employees_router
+from app.api.v1.orders import router as orders_router
+from app.api.v1.refunds import router as refunds_router
+from app.api.v1.analytics import router as analytics_router
+from app.api.v1.ai import router as ai_router
+from app.api.v1.audit_logs import router as audit_logs_router
+from app.api.v1.system import router as system_router
 
 
 models.Base.metadata.create_all(bind=engine)
@@ -126,28 +123,18 @@ def bootstrap_admin():
 
 
 # ======================= UNIFIED API ROUTER (BƯỚC 5.1) =======================
-api_v1_router = APIRouter(prefix="/api/v1")
-api_v1_router.include_router(auth.router)
-api_v1_router.include_router(users.router)
-api_v1_router.include_router(refunds.router)
-
-api_v1_router.include_router(employees.router)
-api_v1_router.include_router(analytics.router)
-api_v1_router.include_router(ai.router)
-api_v1_router.include_router(orders.router)
-api_v1_router.include_router(audit_logs.router)
-api_v1_router.include_router(system.router)
-
-# Hỗ trợ endpoint direct refund cũ (/api/v1/refund) để tương thích ngược
-api_v1_router.add_api_route(
-    "/refund",
-    refunds.direct_request_refund,
-    methods=["POST"],
-    response_model=StandardResponse[dict],
-    include_in_schema=False
-)
-
-app.include_router(api_v1_router)
+# Gắn tất cả các router vào ứng dụng FastAPI chính
+app.include_router(auth_router)
+app.include_router(auth_legacy_router)
+app.include_router(users_router)
+app.include_router(users_legacy_router)
+app.include_router(employees_router)
+app.include_router(orders_router)
+app.include_router(refunds_router)
+app.include_router(analytics_router)
+app.include_router(ai_router)
+app.include_router(audit_logs_router)
+app.include_router(system_router)
 
 
 @app.get("/")

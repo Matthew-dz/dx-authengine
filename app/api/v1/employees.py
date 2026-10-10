@@ -13,7 +13,7 @@ from app.schemas import (
 )
 from app.schemas.common import StandardResponse
 
-router = APIRouter(prefix="/employees", tags=["Employees"])
+router = APIRouter(prefix="/api/v1/employees", tags=["Employees"])
 
 
 class EmployeeCreate(BaseModel):

@@ -161,13 +161,12 @@
                                     <th>Chức vụ</th>
                                     <th>Quê quán</th>
                                     <th>SĐT</th>
-                                    <th>CCCD</th>
                                     <th>Vai trò</th>
                                     <th>Thao tác</th>
                                 </tr>
                             </thead>
                             <tbody id="employeesTableBody">
-                                <tr><td colspan="8" class="text-center text-muted">Đang tải dữ liệu...</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted">Đang tải dữ liệu...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -546,7 +545,8 @@
             if (res.ok) {
                 const data = await res.json();
                 // CHỈ lưu access_token — không lưu role/username vào localStorage
-                localStorage.setItem('access_token', data.access_token);
+                const token = (data && data.data && data.data.access_token) || data.access_token;
+                localStorage.setItem('access_token', token);
                 
                 Swal.fire({
                     icon: 'success', title: 'Đăng nhập thành công!', toast: true,
@@ -647,8 +647,11 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/settings/policy', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             if (res.ok) {
-                const data = await res.json();
-                document.getElementById('salesRefundLimit').value = data.limit;
+                const json = await res.json();
+                const data = (json && json.data !== undefined) ? json.data : json;
+                if (data && data.limit !== undefined) {
+                    document.getElementById('salesRefundLimit').value = data.limit;
+                }
             }
         } catch (e) {
             console.error(e);
@@ -740,43 +743,51 @@
             document.getElementById('empId').value = emp.id;
             document.getElementById('empUsername').value = emp.username;
             document.getElementById('empUsername').disabled = true;
-            document.getElementById('empPassword').value = emp.password; 
+            document.getElementById('empPassword').value = ''; 
             document.getElementById('empPassword').disabled = true;
-            document.getElementById('empFullName').value = emp.full_name;
-            document.getElementById('empPosition').value = emp.position;
-            document.getElementById('empHireDate').value = emp.hire_date;
-            document.getElementById('empPhone').value = emp.phone;
-            document.getElementById('empCCCD').value = emp.cccd;
-            document.getElementById('empAddress').value = emp.address;
-            document.getElementById('empHometown').value = emp.hometown;
-            document.getElementById('empRole').value = emp.role;
+            document.getElementById('empPassword').required = false;
+            document.getElementById('empFullName').value = (emp.full_name && emp.full_name !== 'null') ? emp.full_name : '';
+            document.getElementById('empPosition').value = (emp.position && emp.position !== 'null') ? emp.position : '';
+            document.getElementById('empHireDate').value = (emp.hire_date && emp.hire_date !== 'null') ? emp.hire_date : '';
+            document.getElementById('empPhone').value = (emp.phone && emp.phone !== 'null') ? emp.phone : '';
+            document.getElementById('empCCCD').value = (emp.cccd && emp.cccd !== 'null') ? emp.cccd : '';
+            document.getElementById('empCCCD').required = false;
+            document.getElementById('empAddress').value = (emp.address && emp.address !== 'null') ? emp.address : '';
+            document.getElementById('empHometown').value = (emp.hometown && emp.hometown !== 'null') ? emp.hometown : '';
+            document.getElementById('empRole').value = emp.role || 'staff_sales';
         } else {
             document.getElementById('employeeModalTitle').innerText = 'Thêm nhân viên mới';
             document.getElementById('employeeForm').reset();
             document.getElementById('empId').value = '';
             document.getElementById('empUsername').disabled = false;
             document.getElementById('empPassword').disabled = false;
+            document.getElementById('empPassword').required = true;
+            document.getElementById('empCCCD').required = true;
         }
         employeeModal.show();
     }
     
     async function loadEmployees() {
         const tbody = document.getElementById('employeesTableBody');
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Đang tải...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Đang tải...</td></tr>';
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/employees', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
-            const data = await res.json();
+            const json = await res.json();
+            const emps = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
             tbody.innerHTML = '';
-            data.forEach(emp => {
+            emps.forEach(emp => {
                 const tr = document.createElement('tr');
                 const empData = encodeURIComponent(JSON.stringify(emp));
+                const fullName = (emp.full_name && emp.full_name !== 'null') ? emp.full_name : 'Chưa cập nhật';
+                const position = (emp.position && emp.position !== 'null') ? emp.position : '-';
+                const hometown = (emp.hometown && emp.hometown !== 'null') ? emp.hometown : '-';
+                const phone = (emp.phone && emp.phone !== 'null') ? emp.phone : '-';
                 tr.innerHTML = `
                     <td class="fw-bold">#${emp.id}</td>
-                    <td><div class="fw-bold">${emp.full_name}</div><small class="text-muted">@${emp.username}</small></td>
-                    <td>${emp.position}</td>
-                    <td>${emp.hometown}</td>
-                    <td>${emp.phone}</td>
-                    <td>${emp.cccd}</td>
+                    <td><div class="fw-bold">${fullName}</div><small class="text-muted">@${emp.username}</small></td>
+                    <td>${position}</td>
+                    <td>${hometown}</td>
+                    <td>${phone}</td>
                     <td><span class="badge bg-primary">${emp.role}</span></td>
                     <td>
                         <button class="btn btn-sm btn-info text-white me-1" onclick="openEmployeeModal('${empData}')">
@@ -790,7 +801,7 @@
                 tbody.appendChild(tr);
             });
         } catch (e) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Lỗi kết nối Backend</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Lỗi kết nối Backend</td></tr>';
         }
     }
     
@@ -799,22 +810,26 @@
         const btn = document.getElementById('btnSaveEmployee');
         btn.disabled = true;
         const empId = document.getElementById('empId').value;
-        const payload = {
-            username: document.getElementById('empUsername').value,
-            password: document.getElementById('empPassword').value,
-            full_name: document.getElementById('empFullName').value,
-            position: document.getElementById('empPosition').value,
-            hire_date: document.getElementById('empHireDate').value,
-            phone: document.getElementById('empPhone').value,
-            cccd: document.getElementById('empCCCD').value,
-            address: document.getElementById('empAddress').value,
-            hometown: document.getElementById('empHometown').value,
-            role: document.getElementById('empRole').value,
-        };
-        
+        let payload;
         if (empId) {
-            delete payload.password; // Do not send existing hash to avoid double hashing
-            delete payload.username; // Username should not be updated
+            payload = {
+                full_name: document.getElementById('empFullName').value,
+                phone: document.getElementById('empPhone').value,
+                address: document.getElementById('empAddress').value
+            };
+        } else {
+            payload = {
+                username: document.getElementById('empUsername').value,
+                password: document.getElementById('empPassword').value,
+                full_name: document.getElementById('empFullName').value,
+                position: document.getElementById('empPosition').value,
+                hire_date: document.getElementById('empHireDate').value,
+                phone: document.getElementById('empPhone').value,
+                cccd: document.getElementById('empCCCD').value,
+                address: document.getElementById('empAddress').value,
+                hometown: document.getElementById('empHometown').value,
+                role: document.getElementById('empRole').value,
+            };
         }
         
         try {
@@ -997,8 +1012,9 @@
             
             const queryString = params.toString() ? '?' + params.toString() : '';
             const res = await fetch('http://127.0.0.1:8000/api/v1/audit-logs' + queryString, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
-            const data = await res.json();
-            auditLogs = data.map(log => {
+            const json = await res.json();
+            const rawLogs = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
+            auditLogs = rawLogs.map(log => {
                 const dateObj = new Date(log.created_at);
                 const timeStr = dateObj.toLocaleTimeString('vi-VN') + ' ' + dateObj.toLocaleDateString('vi-VN');
                 return {
@@ -1061,7 +1077,8 @@
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> Đang tải...</td></tr>';
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/orders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
-            const data = await res.json();
+            const json = await res.json();
+            const orders = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
             
             updateOrdersChart(); // Render the bar chart
 
@@ -1069,7 +1086,7 @@
             let hasRenderedEligible = false;
             let hasRenderedExpired = false;
 
-            data.forEach((o, index) => {
+            orders.forEach((o, index) => {
                 if (o.is_eligible && !hasRenderedEligible) {
                     tbody.innerHTML += `<tr class="table-success text-success"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-check-circle me-2"></i> NHÓM ĐỦ ĐIỀU KIỆN HOÀN TIỀN</td></tr>`;
                     hasRenderedEligible = true;
@@ -1089,7 +1106,6 @@
                         <td class="${!o.is_eligible ? 'text-muted' : 'text-secondary'}" style="font-size: 0.9em;">
                             <div class="fw-bold text-dark">${o.customer_name || 'N/A'}</div>
                             <div>${o.customer_email || 'N/A'}</div>
-                            ${o.is_flagged ? '<span class="badge bg-danger mt-1"><i class="fas fa-exclamation-triangle"></i> Gian lận</span>' : ''}
                         </td>
                         <td class="text-success fw-bold">$${o.price}</td>
                         <td>${dateStr}</td>

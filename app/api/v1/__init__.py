@@ -12,14 +12,17 @@ from app.api.v1 import (
     system
 )
 
-api_v1_router = APIRouter(prefix="/api/v1")
+api_v1_router = APIRouter()
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(auth.legacy_router)
 api_v1_router.include_router(users.router)
+api_v1_router.include_router(users.legacy_router)
+
 api_v1_router.include_router(refunds.router)
 api_v1_router.include_router(employees.router)
+api_v1_router.include_router(orders.router)
 api_v1_router.include_router(analytics.router)
 api_v1_router.include_router(ai.router)
-api_v1_router.include_router(orders.router)
 api_v1_router.include_router(audit_logs.router)
 api_v1_router.include_router(system.router)
 

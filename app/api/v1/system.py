@@ -9,7 +9,7 @@ from app.agent import enforcer, Subject, Resource
 from app.security import get_current_user, verify_password, get_password_hash
 from app.schemas.common import StandardResponse
 
-router = APIRouter(tags=["System"])
+router = APIRouter(prefix="/api/v1", tags=["System"])
 
 
 class RoleUpdateRequest(BaseModel):

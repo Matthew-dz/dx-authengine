@@ -9,7 +9,7 @@ from app.agent import enforcer, Subject, Resource
 from app.security import get_current_user
 from app.schemas.common import StandardResponse
 
-router = APIRouter(prefix="/orders", tags=["Orders"])
+router = APIRouter(prefix="/api/v1/orders", tags=["Orders"])
 
 
 @router.get("", response_model=StandardResponse[List[dict]])

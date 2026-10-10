@@ -22,7 +22,7 @@ from app.schemas.common import StandardResponse
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ai", tags=["AI Assistant"])
+router = APIRouter(prefix="/api/v1/ai", tags=["AI Assistant"])
 
 
 @router.post("/analyze-refund/{refund_id}", response_model=StandardResponse[AIRecommendationResponse])

@@ -4,11 +4,12 @@ from app.security import get_current_user
 from app.schemas.employee import EmployeeProfileResponse
 from app.schemas.common import StandardResponse
 
-router = APIRouter(tags=["Users"])
+router = APIRouter(prefix="/api/v1/users", tags=["Users"])
+legacy_router = APIRouter(prefix="/api/v1", tags=["Users"])
 
 
 @router.get("/me", response_model=StandardResponse[EmployeeProfileResponse])
-@router.get("/users/me", response_model=StandardResponse[EmployeeProfileResponse])
+@legacy_router.get("/me", response_model=StandardResponse[EmployeeProfileResponse], include_in_schema=False)
 def get_user_profile(current_user: models.Employee = Depends(get_current_user)):
     """
     API Định danh người dùng chuẩn hóa (Bước 5.4 - Unified Experience).
