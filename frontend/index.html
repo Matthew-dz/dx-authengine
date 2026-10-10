@@ -419,26 +419,60 @@
     const tbody = document.getElementById('orderTableBody');
     const modal = new bootstrap.Modal(document.getElementById('refundModal'));
     let auditLogs = []; // Lưu log toàn cục
+    let userProfile = null; // Identity Layer: profile lấy từ API /me
 
-    // --- KIỂM TRA ĐĂNG NHẬP ---
-    function checkLoginState() {
-        const currentUser = localStorage.getItem('currentUser');
-        if (currentUser) {
-            const userObj = JSON.parse(currentUser);
+    // ======================= IDENTITY LAYER =======================
+    // Hàm gọi API /me để lấy profile user từ server (source of truth)
+    async function fetchUserProfile() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return null;
+        
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/v1/me', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            
+            if (res.ok) {
+                return await res.json();
+            } else {
+                // CRITICAL: Token hết hạn hoặc không hợp lệ → force logout
+                localStorage.removeItem('access_token');
+                window.location.href = 'index.html';
+                return null;
+            }
+        } catch (error) {
+            console.error('Lỗi kết nối API /me:', error);
+            return null;
+        }
+    }
+
+    // --- KIỂM TRA ĐĂNG NHẬP (Identity Layer) ---
+    async function checkLoginState() {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            // Gọi API /me để lấy profile thực từ server
+            userProfile = await fetchUserProfile();
+            if (!userProfile) {
+                // Token không hợp lệ, hiện lại trang login
+                loginView.classList.remove('d-none');
+                dashboardView.classList.add('d-none');
+                return;
+            }
+            
             loginView.classList.add('d-none');
             dashboardView.classList.remove('d-none');
             
-            // Cập nhật giao diện Navbar
-            document.getElementById('nav-user-name').innerText = userObj.name;
-            document.getElementById('nav-user-role').innerText = userObj.role;
-            document.getElementById('nav-user-avatar').src = `https://ui-avatars.com/api/?name=${userObj.name}&background=0D8ABC&color=fff`;
+            // Cập nhật giao diện Navbar từ API /me response
+            document.getElementById('nav-user-name').innerText = userProfile.full_name;
+            document.getElementById('nav-user-role').innerText = userProfile.role;
+            document.getElementById('nav-user-avatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.full_name)}&background=0D8ABC&color=fff`;
             
-            // Ẩn hiện phần Roles theo quyền Admin
+            // Ẩn hiện phần Roles theo quyền Admin (dùng role từ /me)
             const navEmployeesElement = document.getElementById('nav-employees');
             const salesRefundLimit = document.getElementById('salesRefundLimit');
             const btnSaveSettings = document.getElementById('btnSaveSettings');
             
-            if (userObj.role.toLowerCase().includes('admin')) {
+            if (userProfile.role.toLowerCase().includes('admin')) {
                 navEmployeesElement.style.display = 'block';
                 salesRefundLimit.disabled = false;
                 btnSaveSettings.disabled = false;
@@ -450,7 +484,7 @@
             
             // Tải dữ liệu
             const activeTab = localStorage.getItem('activeTab') || 'nav-orders';
-            if (activeTab === 'nav-employees' && !userObj.role.toLowerCase().includes('admin')) {
+            if (activeTab === 'nav-employees' && !userProfile.role.toLowerCase().includes('admin')) {
                 switchTab('nav-orders');
             } else {
                 switchTab(activeTab);
@@ -463,12 +497,13 @@
                 localStorage.removeItem('flashMessage');
             }
         } else {
+            userProfile = null;
             loginView.classList.remove('d-none');
             dashboardView.classList.add('d-none');
         }
     }
 
-    // --- XỬ LÝ LOGIN ---
+    // --- XỬ LÝ LOGIN (Identity Layer: chỉ lưu access_token) ---
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const usernameInput = document.getElementById('loginUsername').value;
@@ -481,13 +516,13 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: usernameInput, password: passwordInput })
             });
             
             if (res.ok) {
                 const data = await res.json();
-                localStorage.setItem('currentUser', JSON.stringify(data));
+                // CHỈ lưu access_token — không lưu role/username vào localStorage
                 localStorage.setItem('access_token', data.access_token);
                 
                 Swal.fire({
@@ -495,7 +530,8 @@
                     position: 'top-end', showConfirmButton: false, timer: 2000
                 });
                 
-                checkLoginState();
+                // checkLoginState sẽ gọi /me để lấy profile
+                await checkLoginState();
             } else {
                 const err = await res.json();
                 Swal.fire({ icon: 'error', title: 'Thất bại', text: err.detail });
@@ -511,8 +547,8 @@
     // --- XỬ LÝ LOGOUT ---
     document.getElementById('btnLogout').addEventListener('click', (e) => {
         e.preventDefault();
-        localStorage.removeItem('currentUser');
         localStorage.removeItem('access_token');
+        userProfile = null;
         checkLoginState();
     });
 
@@ -635,8 +671,7 @@
             return Swal.fire('Lỗi', 'Mật khẩu mới không khớp!', 'error');
         }
         
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (!currentUser) return Swal.fire('Lỗi', 'Chưa đăng nhập!', 'error');
+        if (!userProfile) return Swal.fire('Lỗi', 'Chưa đăng nhập!', 'error');
 
         btnChange.disabled = true;
         btnChange.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
@@ -967,8 +1002,7 @@
         noLogsMsg.style.display = 'none';
         logBody.innerHTML = '';
         
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        const isAdmin = currentUser && currentUser.role && currentUser.role.toLowerCase() === 'admin';
+        const isAdmin = userProfile && userProfile.role && userProfile.role.toLowerCase() === 'admin';
         const thAction = document.getElementById('thAction');
         if (thAction) {
             thAction.style.display = isAdmin ? 'table-cell' : 'none';
@@ -1057,14 +1091,13 @@
 
     // --- XỬ LÝ HOÀN TIỀN VỚI TÀI KHOẢN ĐÃ LOGIN ---
     document.getElementById('btnConfirmRefund').addEventListener('click', async () => {
-        // Lấy username từ localStorage
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (!currentUser) {
+        // Lấy username từ userProfile (Identity Layer)
+        if (!userProfile) {
             Swal.fire('Lỗi', 'Phiên đăng nhập đã hết hạn', 'error');
             return;
         }
 
-        const username = currentUser.username;
+        const username = userProfile.username;
         const orderId = document.getElementById('hiddenOrderId').value;
         const btn = document.getElementById('btnConfirmRefund');
         
@@ -1115,8 +1148,7 @@
     checkLoginState();
 
     async function changeDecision(logId) {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (!currentUser || currentUser.role.toLowerCase() !== 'admin') {
+        if (!userProfile || userProfile.role.toLowerCase() !== 'admin') {
             Swal.fire('Lỗi', 'Chỉ admin mới có quyền!', 'error');
             return;
         }

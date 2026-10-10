@@ -8,12 +8,28 @@ from datetime import datetime
 from app import models
 from app.database import engine, SessionLocal
 from app.agent import enforcer, Subject, Resource, generate_refund_content
-from app.email_service import send_refund_email
-from app.security import create_access_token, get_current_user, get_password_hash, verify_password
-from app.schemas import EmployeeResponse
+import json
+from app.email_service import send_refund_email, send_notification_email
+from app.security import create_access_token, get_current_user, get_password_hash, verify_password, get_optional_current_user
+from app.schemas import (
+    EmployeeResponse,
+    EmployeeProfileResponse,
+    EmployeeUpdate,
+    RefundRequestCreate,
+    RefundStateUpdate,
+    RefundRequestResponse
+)
 models.Base.metadata.create_all(bind=engine)
 
+
 app = FastAPI(title="DX-AuthEngine API")
+
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+cors_origins_str = os.getenv("FRONTEND_CORS_ORIGINS", "")
+cors_origins_list = [origin.strip() for origin in cors_origins_str.split(",") if origin.strip()]
 
 @app.on_event("startup")
 def bootstrap_admin():
@@ -34,11 +50,51 @@ def bootstrap_admin():
         enforcer.add_policy("admin", "policy", "write", "")
         enforcer.save_policy()
 
+    # Khởi tạo quyền cho module refund
+    refund_policies = [
+        # Nhóm Nhân viên (Employee/Sale): Có quyền create và process
+        ("staff_sales", "refund", "create", ""),
+        ("staff_sales", "refund", "process", ""),
+        ("employee", "refund", "create", ""),
+        ("employee", "refund", "process", ""),
+        ("sale", "refund", "create", ""),
+        ("sale", "refund", "process", ""),
+        # Nhóm Quản lý (Manager/Admin): Có quyền approve và reject
+        ("manager", "refund", "approve", ""),
+        ("manager", "refund", "reject", ""),
+        ("admin", "refund", "approve", ""),
+        ("admin", "refund", "reject", ""),
+        # Nhóm Phân tích (Analytics): Chỉ Role Admin và Manager có quyền truy cập
+        ("admin", "analytics", "read", ""),
+        ("manager", "analytics", "read", ""),
+    ]
+    current_policies = enforcer.get_policy()
+    changed = False
+    for p in refund_policies:
+        if not any(cp[:4] == list(p) for cp in current_policies):
+            enforcer.add_policy(*p)
+            changed = True
+    if changed:
+        enforcer.save_policy()
+
+    # Nạp toàn bộ tài liệu Knowledge Base vào RAM In-Memory Cache chuẩn bị cho RAG
+    from app.services.knowledge_service import KnowledgeBaseService
+    KnowledgeBaseService().load_documents()
+
+    # Tự động gọi RAG Service để Semantic Chunking và cập nhật vector mới nhất vào ChromaDB
+    try:
+        from app.services.rag_service import RAGService
+        RAGService().index_knowledge_base()
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn.error").warning(f"Không thể index ChromaDB tại startup: {e}")
+
+
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=cors_origins_list, 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,32 +143,26 @@ class EmployeeCreate(BaseModel):
     cccd: str
     role: str
 
-class EmployeeUpdate(BaseModel):
-    password: str = None  # Add optional password field for updating
-    full_name: str
-    position: str
-    hire_date: str
-    address: str
-    hometown: str
-    phone: str
-    cccd: str
-    role: str
-
 @app.post("/api/v1/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(models.Employee).filter(models.Employee.username == req.username.lower()).first()
     if not user or not verify_password(req.password, user.password):
         raise HTTPException(status_code=401, detail="Tài khoản hoặc mật khẩu không chính xác")
     
-    access_token = create_access_token({"sub": user.username, "role": user.role})
+    access_token = create_access_token({"sub": user.username, "id": user.id, "role": user.role})
     
     return {
         "access_token": access_token,
-        "token_type": "bearer",
-        "username": user.username,
-        "name": user.full_name,
-        "role": user.role
+        "token_type": "bearer"
     }
+
+
+# ======================= IDENTITY LAYER: API /me =======================
+@app.get("/api/v1/me", response_model=EmployeeProfileResponse)
+def get_my_profile(current_user: models.Employee = Depends(get_current_user)):
+    """Trả về profile của user đang đăng nhập.
+    FastAPI + EmployeeProfileResponse tự động gọt bỏ password, cccd."""
+    return current_user
 
 @app.get("/api/v1/employees", response_model=List[EmployeeResponse])
 def get_employees(current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -160,27 +210,16 @@ def update_employee(emp_id: int, req: EmployeeUpdate, current_user: models.Emplo
     if not emp:
         raise HTTPException(status_code=404, detail="Không tìm thấy nhân viên")
         
-    old_role = emp.role
-    
     update_data = req.dict(exclude_unset=True)
-    if update_data.get("password"):
-        update_data["password"] = get_password_hash(update_data["password"])
-    else:
-        # If password is empty/None, do not update it
-        update_data.pop("password", None)
-    
-    for key, value in update_data.items():
-        setattr(emp, key, value)
+    allowed_fields = ["full_name", "phone", "address", "email"]
+    for key in allowed_fields:
+        if key in update_data:
+            setattr(emp, key, update_data[key])
         
     db.commit()
     db.refresh(emp)
-    
-    if old_role != emp.role:
-        enforcer.delete_roles_for_user(emp.username)
-        enforcer.add_role_for_user(emp.username, emp.role)
-        enforcer.save_policy()
-        
     return emp
+
 
 @app.delete("/api/v1/employees/{emp_id}")
 def delete_employee(emp_id: int, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -317,6 +356,21 @@ async def request_refund(req: RefundRequest, background_tasks: BackgroundTasks, 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ======================= REFUND ROUTER (REPOSITORY & SERVICE LAYER) =======================
+from app.routers.refunds import router as refunds_router
+app.include_router(refunds_router)
+
+# ======================= ANALYTICS ROUTER (DATA ANALYTICS MODULE) =======================
+from app.routers.analytics import router as analytics_router
+app.include_router(analytics_router)
+
+# ======================= AI ASSISTANT ROUTER (AI MODULE 4.1) =======================
+from app.routers.ai import router as ai_router
+app.include_router(ai_router)
+
+
+
+
 @app.get("/api/v1/audit-logs")
 def get_audit_logs(
     search: Optional[str] = None,
@@ -325,8 +379,9 @@ def get_audit_logs(
     current_user: models.Employee = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("audit_log"), "read"):
-        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("audit_log"), "read") or current_user.role not in ["admin", "manager"]:
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập Audit Log. Chỉ Admin và Manager mới có quyền xem.")
+
     query = db.query(models.AuditLog, models.Order, models.Customer) \
         .join(models.Order, models.AuditLog.order_id == models.Order.id) \
         .join(models.Customer, models.Order.customer_id == models.Customer.id)
@@ -359,6 +414,7 @@ def get_audit_logs(
             "employee_username": log.employee_username,
             "decision": log.decision,
             "reason": log.reason,
+            "details": log.details,
             "created_at": log.created_at.isoformat()
         })
     return result

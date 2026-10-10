@@ -32,3 +32,8 @@ def send_refund_email(to_email: str, subject: str, body: str):
         print(f"Đã gửi email thành công tới {to_email}")
     except Exception as e:
         print(f"Lỗi khi gửi email tới {to_email}: {e}")
+
+def send_notification_email(to_email: str, subject: str, body: str):
+    """Gửi email thông báo tự động cho khách hàng."""
+    return send_refund_email(to_email=to_email, subject=subject, body=body)
+

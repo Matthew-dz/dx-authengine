@@ -222,3 +222,7 @@ __marimo__/
 # Security & Database
 *.db
 *.sqlite3
+
+# ChromaDB Vector Storage
+chroma_data/
+./chroma_data/
