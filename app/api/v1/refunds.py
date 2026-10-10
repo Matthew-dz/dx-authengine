@@ -1,3 +1,4 @@
+import json
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
@@ -6,10 +7,12 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db, SessionLocal
-from app.agent import enforcer, Subject, Resource, generate_refund_content
+from app.agent import enforcer, Subject, Resource, generate_refund_content, RefundContent
 from app.email_service import send_refund_email
 from app.security import get_current_user, get_optional_current_user
 from app.services.refund_service import RefundService
+from app.events.event_bus import event_bus
+from app.events.event import RefundApprovedEvent
 from app.schemas import (
     RefundRequestCreate,
     RefundStateUpdate,
@@ -31,33 +34,68 @@ async def process_ai_and_email(
     customer_email: str, 
     customer_name: str, 
     decision_str: str,
-    audit_log_id: int
+    audit_log_id: int,
+    refund_req_id: Optional[int] = None,
+    product_name: str = "",
+    order_id: int = 0,
+    amount: float = 0.0
 ):
+    import asyncio
+    content = None
     try:
-        content = await generate_refund_content(
-            username=username,
-            order_days_old=order_days_old,
-            customer_email=customer_email,
-            customer_name=customer_name,
-            decision=decision_str
-        )
-        
-        db = SessionLocal()
-        try:
-            log = db.query(models.AuditLog).filter(models.AuditLog.id == audit_log_id).first()
-            if log:
-                log.reason = content.reason
-                db.commit()
-        finally:
-            db.close()
-            
-        send_refund_email(
-            to_email=customer_email,
-            subject='Thông báo kết quả xử lý hoàn tiền - DX-AuthEngine',
-            body=content.email_template
+        content = await asyncio.wait_for(
+            generate_refund_content(
+                username=username,
+                order_days_old=order_days_old,
+                customer_email=customer_email,
+                customer_name=customer_name,
+                decision=decision_str
+            ),
+            timeout=5.0
         )
     except Exception as e:
-        print(f"Lỗi khi chạy ngầm AI và Email: {e}")
+        print(f"[AI] Fallback sinh nội dung: {e}")
+
+    if not content:
+        content = RefundContent(
+            reason=f"Đơn hàng #{order_id} ({product_name}) được duyệt hoàn tiền ({order_days_old} ngày).",
+            email_template=(
+                f"Kính gửi {customer_name},\n\n"
+                f"Yêu cầu hoàn tiền cho đơn hàng #{order_id} ({product_name}) với số tiền ${amount:,.2f} USD "
+                f"đã được hệ thống DX-OS phê duyệt thành công.\n\n"
+                f"Số tiền hoàn trả sẽ được chuyển về tài khoản của quý khách trong thời gian sớm nhất.\n\n"
+                f"Trân trọng,\nĐội ngũ CSKH DX-OS System."
+            )
+        )
+        
+    db = SessionLocal()
+    try:
+        log = db.query(models.AuditLog).filter(models.AuditLog.id == audit_log_id).first()
+        if log:
+            log.reason = content.reason
+        if refund_req_id:
+            ref = db.query(models.RefundRequest).filter(models.RefundRequest.id == refund_req_id).first()
+            if ref:
+                ref.reason = content.reason
+        db.commit()
+    except Exception as err:
+        print(f"[DB] Lỗi lưu reason: {err}")
+    finally:
+        db.close()
+        
+    try:
+        await asyncio.to_thread(
+            send_refund_email,
+            to_email=customer_email,
+            subject=f"Thông báo kết quả duyệt hoàn tiền đơn hàng #{order_id} ({product_name}) - DX-OS",
+            body=content.email_template,
+            product_name=product_name,
+            order_id=order_id,
+            amount=amount,
+            customer_name=customer_name
+        )
+    except Exception as mail_err:
+        print(f"[Email] Lỗi khi gửi mail: {mail_err}")
 
 
 @router.post("", response_model=StandardResponse[RefundRequestResponse])
@@ -198,17 +236,80 @@ async def direct_request_refund(
     if not is_allowed:
         raise HTTPException(status_code=403, detail="Không đủ quyền duyệt hoàn tiền")
         
+    # 1. Cập nhật trạng thái đơn hàng thành REFUNDED
     order.status = "REFUNDED"
+    
+    # 2. LƯU SẢN PHẨM / YÊU CẦU HOÀN TIỀN VÀO HỆ THỐNG (models.RefundRequest)
+    refund_requests = db.query(models.RefundRequest).filter(models.RefundRequest.order_id == req.order_id).all()
+    if not refund_requests:
+        refund_req = models.RefundRequest(
+            order_id=req.order_id,
+            employee_id=current_user.id,
+            reason=f"Phê duyệt hoàn tiền cho sản phẩm: {order.product_name}",
+            status=models.RefundState.APPROVED,
+            notes="Duyệt hoàn tiền trực tiếp qua giao diện DX-OS",
+            amount=order.price if order.price is not None else 0.0,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(refund_req)
+        db.flush()
+    else:
+        for r in refund_requests:
+            r.status = models.RefundState.APPROVED
+            r.employee_id = current_user.id
+            r.updated_at = datetime.utcnow()
+            if not r.amount and order.price is not None:
+                r.amount = order.price
+        refund_req = refund_requests[0]
+
+    # 3. GHI NHẬN AUDIT LOG VỚI ĐẦY ĐỦ DETAILS JSON VÀ THÔNG TIN SẢN PHẨM
+    details_payload = {
+        "resource_id": refund_req.id,
+        "action": "approve",
+        "old_state": "PROCESSING",
+        "new_state": "APPROVED",
+        "order_id": order.id,
+        "product_name": order.product_name,
+        "amount": order.price,
+        "customer_name": customer.full_name,
+        "customer_email": customer.email,
+        "timestamp": datetime.utcnow().isoformat()
+    }
     audit_log = models.AuditLog(
         order_id=req.order_id,
         employee_username=current_user.username,
         decision='ALLOW',
-        reason='Đã duyệt bởi hệ thống'
+        reason=f"Đơn hàng #{order.id} ({order.product_name}) được duyệt hoàn tiền ({order_days_old} ngày).",
+        details=json.dumps(details_payload, ensure_ascii=False),
+        created_at=datetime.utcnow()
     )
     db.add(audit_log)
     db.commit()
     db.refresh(audit_log)
-    
+    db.refresh(refund_req)
+
+    # 4. PHÁT TÁN SỰ KIỆN QUA EVENT BUS (BƯỚC 5.2 CHUẨN KIẾN TRÚC)
+    event = RefundApprovedEvent(
+        event_type="RefundApproved",
+        entity_id=refund_req.id,
+        user_id=current_user.id,
+        data={
+            "refund_id": refund_req.id,
+            "order_id": order.id,
+            "employee_username": current_user.username,
+            "employee_id": current_user.id,
+            "product_name": order.product_name,
+            "amount": order.price,
+            "customer_name": customer.full_name,
+            "customer_email": customer.email,
+            "old_state": "PROCESSING",
+            "new_state": "APPROVED"
+        }
+    )
+    event_bus.publish(event, background_tasks)
+
+    # 5. CHẠY TỰ ĐỘNG HÓA AI VÀ GỬI EMAIL THÔNG BÁO CHO KHÁCH HÀNG
     background_tasks.add_task(
         process_ai_and_email,
         username=current_user.username,
@@ -216,11 +317,35 @@ async def direct_request_refund(
         customer_email=customer.email,
         customer_name=customer.full_name,
         decision_str="ALLOW",
-        audit_log_id=audit_log.id
+        audit_log_id=audit_log.id,
+        refund_req_id=refund_req.id,
+        product_name=order.product_name,
+        order_id=order.id,
+        amount=order.price or 0.0
     )
     
     return StandardResponse(
         success=True,
-        message="Giao dịch thành công, email đang được gửi",
-        data={"order_id": req.order_id, "status": "REFUNDED"}
+        message=f"Đã duyệt và lưu sản phẩm '{order.product_name}' vào hệ thống thành công. Email đang được gửi.",
+        data={
+            "order_id": req.order_id,
+            "product_name": order.product_name,
+            "status": "REFUNDED",
+            "refund_id": refund_req.id
+        }
     )
+
+
+legacy_refund_router = APIRouter(tags=["Refunds Legacy"])
+
+
+@legacy_refund_router.post("/api/v1/refund", response_model=StandardResponse[dict])
+async def legacy_direct_request_refund(
+    req: DirectRefundRequest,
+    background_tasks: BackgroundTasks,
+    current_user: models.Employee = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Xử lý hoàn tiền trực tiếp cho đơn hàng (Endpoint tương thích với frontend /api/v1/refund)."""
+    return await direct_request_refund(req, background_tasks, current_user, db)
+

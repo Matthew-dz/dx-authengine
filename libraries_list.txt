@@ -1,0 +1,265 @@
+====================================================================================================
+DANH SÁCH TẤT CẢ CÁC THƯ VIỆN ĐÃ CÀI ĐẶT TRONG DỰ ÁN DX-AUTHENGINE (venv/Lib/site-packages)
+====================================================================================================
+Tổng số lượng thư viện đã cài đặt: 127
+
+STT  | TÊN THƯ VIỆN                         | PHIÊN BẢN    | GIẤY PHÉP              | MÔ TẢ TÓM TẮT
+------------------------------------------------------------------------------------------------------------------------
+1    | absl-py                              | 2.5.0        | Apache Software License | Abseil Python Common Libraries, see https://github.com/ab...
+2    | aiohappyeyeballs                     | 2.7.1        | PSF-2.0                | Happy Eyeballs for asyncio
+3    | aiohttp                              | 3.14.4       | Open Source            | Async http client/server framework (asyncio)
+4    | aiohttp-retry                        | 2.9.1        | MIT                    | Simple retry client for aiohttp
+5    | aiosignal                            | 1.4.0        | Apache 2.0             | aiosignal: a list of registered asynchronous callbacks
+6    | annotated-doc                        | 0.0.5        | Open Source            | Document parameters, class attributes, return types, and ...
+7    | annotated-types                      | 0.8.0        | MIT License            | Reusable constraint types to use with typing.Annotated
+8    | anyio                                | 4.15.1       | Open Source            | High-level concurrency and networking framework on top of...
+9    | argon2-cffi                          | 25.1.0       | Open Source            | Argon2 for Python
+10   | argon2-cffi-bindings                 | 26.1.0       | Open Source            | Low-level CFFI bindings for Argon2
+11   | attrs                                | 26.1.0       | Open Source            | Classes Without Boilerplate
+12   | bcrypt                               | 5.0.0        | Apache-2.0             | Modern password hashing for your software and your servers
+13   | build                                | 1.6.1        | Open Source            | A simple, correct Python build frontend
+14   | casbin                               | 1.43.0       | Apache 2.0             | An authorization library that supports access control mod...
+15   | certifi                              | 2026.7.22    | MPL-2.0                | Python package for providing Mozilla's CA Bundle.
+16   | cffi                                 | 2.1.1        | Open Source            | Foreign Function Interface for Python calling C code.
+17   | charset-normalizer                   | 3.5.2        | MIT                    | The Real First Universal Charset Detector. Open, modern a...
+18   | chromadb                             | 1.5.9        | Apache Software License | Chroma.
+19   | click                                | 8.5.0        | Open Source            | Composable command line interface toolkit
+20   | colorama                             | 0.4.6        | BSD License            | Cross-platform colored terminal text.
+21   | cryptography                         | 50.0.2       | Open Source            | cryptography is a package which provides cryptographic re...
+22   | distro                               | 1.9.0        | Apache Software License | Distro - an OS platform information API
+23   | durationpy                           | 0.11         | MIT                    | Module for converting between datetime.timedelta and Go's...
+24   | fastapi                              | 0.142.2      | Open Source            | FastAPI framework, high performance, easy to learn, fast ...
+25   | filelock                             | 4.1.0        | MIT License            | A platform independent file lock.
+26   | flatbuffers                          | 25.12.19     | Apache 2.0             | The FlatBuffers serialization format for Python
+27   | frozenlist                           | 1.8.0        | Apache-2.0             | A list-like structure which implements collections.abc.Mu...
+28   | fsspec                               | 2026.9.0     | Open Source            | File-system specification
+29   | google-ai-generativelanguage         | 0.6.15       | Apache 2.0             | Google Ai Generativelanguage API client library
+30   | google-api-core                      | 2.33.0       | Apache 2.0             | Google API client core library
+31   | google-api-python-client             | 2.201.0      | Apache 2.0             | Google API Client Library for Python
+32   | google-auth                          | 2.60.0       | Apache 2.0             | Google Authentication Library
+33   | google-auth-httplib2                 | 0.4.4        | Apache 2.0             | Google Authentication Library: httplib2 transport
+34   | google-genai                         | 2.28.0       | Open Source            | GenAI Python SDK
+35   | google-generativeai                  | 0.8.6        | Apache 2.0             | Google Generative AI High level API client library and to...
+36   | googleapis-common-protos             | 1.75.0       | Apache 2.0             | Common protobufs used in Google APIs
+37   | grpcio                               | 1.84.0       | Open Source            | HTTP/2-based RPC framework
+38   | grpcio-status                        | 1.71.2       | Apache License 2.0     | Status proto mapping for gRPC
+39   | h11                                  | 0.16.0       | MIT                    | A pure-Python, bring-your-own-I/O implementation of HTTP/1.1
+40   | hf-xet                               | 1.7.0        | Apache Software License | Fast transfer of large files with the Hugging Face Hub.
+41   | httpcore                             | 1.0.9        | BSD License            | A minimal low-level HTTP client.
+42   | httpcore2                            | 2.13.1       | BSD License            | A minimal low-level HTTP client.
+43   | httplib2                             | 0.32.0       | MIT                    | A comprehensive HTTP client library.
+44   | httptools                            | 0.8.0        | Open Source            | A collection of framework independent HTTP protocol utils.
+45   | httpx                                | 0.28.1       | BSD-3-Clause           | The next generation HTTP client.
+46   | httpx2                               | 2.13.1       | BSD License            | The next generation HTTP client.
+47   | huggingface_hub                      | 2.2.0        | Apache-2.0             | Client library to download and publish models, datasets a...
+48   | idna                                 | 3.20         | Open Source            | Internationalized Domain Names in Applications (IDNA)
+49   | importlib_resources                  | 7.1.0        | Open Source            | Read resources from Python packages
+50   | iniconfig                            | 2.3.1        | Open Source            | brain-dead simple config-ini parsing
+51   | jsonschema                           | 4.26.0       | Open Source            | An implementation of JSON Schema validation for Python
+52   | jsonschema-specifications            | 2025.9.1     | Open Source            | The JSON Schema meta-schemas and vocabularies, exposed as...
+53   | kubernetes                           | 37.0.1       | Open Source            | Kubernetes python client
+54   | markdown-it-py                       | 4.2.0        | MIT License            | Python port of markdown-it. Markdown parsing, done right!
+55   | mcp                                  | 2.3.0        | MIT                    | Model Context Protocol SDK
+56   | mcp-types                            | 2.3.0        | MIT                    | Model Context Protocol wire types
+57   | mdurl                                | 0.1.2        | MIT License            | Markdown URL utilities
+58   | mmh3                                 | 5.3.1        | MIT License            | Python extension for MurmurHash (MurmurHash3), a set of f...
+59   | multidict                            | 6.9.1        | Apache License 2.0     | multidict implementation
+60   | numpy                                | 2.5.3        | Open Source            | Fundamental package for array computing in Python
+61   | oauthlib                             | 4.0.0        | BSD-3-Clause           | A generic, spec-compliant, thorough implementation of the...
+62   | onnxruntime                          | 1.31.0       | MIT License            | ONNX Runtime is a runtime accelerator for Machine Learnin...
+63   | opentelemetry-api                    | 1.45.1       | Open Source            | OpenTelemetry Python API
+64   | opentelemetry-exporter-otlp-common   | 0.66b1       | Open Source            | OpenTelemetry OTLP HTTP export utilities
+65   | opentelemetry-exporter-otlp-proto-common | 1.45.1       | Open Source            | OpenTelemetry Protobuf encoding
+66   | opentelemetry-exporter-otlp-proto-grpc | 1.45.1       | Open Source            | OpenTelemetry Collector Protobuf over gRPC Exporter
+67   | opentelemetry-proto                  | 1.45.1       | Open Source            | OpenTelemetry Python Proto
+68   | opentelemetry-sdk                    | 1.45.1       | Open Source            | OpenTelemetry Python SDK
+69   | opentelemetry-semantic-conventions   | 0.66b1       | Open Source            | OpenTelemetry Semantic Conventions
+70   | orjson                               | 3.13.0       | Apache Software License | Fast, correct Python JSON library supporting dataclasses,...
+71   | overrides                            | 7.7.0        | Apache License, Versio | A decorator to automatically detect mismatch when overrid...
+72   | packaging                            | 26.3         | Open Source            | Core utilities for Python packages
+73   | passlib                              | 1.7.4        | BSD                    | comprehensive password hashing framework supporting over ...
+74   | pip                                  | 25.2         | Open Source            | The PyPA recommended tool for installing Python packages.
+75   | pluggy                               | 1.6.0        | MIT                    | plugin and hook calling mechanisms for python
+76   | propcache                            | 0.5.4        | Apache-2.0             | Accelerated property cache
+77   | proto-plus                           | 1.28.2       | Apache 2.0             | Beautiful, Pythonic protocol buffers
+78   | protobuf                             | 7.36.2       | 3-Clause BSD License   | 
+79   | psycopg                              | 3.3.6        | Open Source            | PostgreSQL database adapter for Python
+80   | psycopg-binary                       | 3.3.6        | Open Source            | PostgreSQL database adapter for Python -- C optimisation ...
+81   | psycopg2                             | 2.9.13       | LGPL with exceptions   | psycopg2 - Python-PostgreSQL Database Adapter
+82   | psycopg2-binary                      | 2.9.13       | LGPL with exceptions   | psycopg2 - Python-PostgreSQL Database Adapter
+83   | pyasn1                               | 0.6.4        | BSD-2-Clause           | Pure-Python implementation of ASN.1 types and DER/BER/CER...
+84   | pyasn1_modules                       | 0.4.2        | BSD                    | A collection of ASN.1-based protocols modules
+85   | pybase64                             | 1.5.1        | Open Source            | Fast Base64 encoding/decoding
+86   | pycparser                            | 3.0          | Open Source            | C parser in Python
+87   | pydantic                             | 2.13.5       | Open Source            | Data validation using Python type hints
+88   | pydantic-settings                    | 2.15.0       | MIT License            | Settings management using Pydantic
+89   | pydantic_core                        | 2.46.5       | Open Source            | Core functionality for Pydantic validation and serialization
+90   | Pygments                             | 2.21.0       | Open Source            | Pygments is a syntax highlighting package written in Python.
+91   | PyJWT                                | 2.15.1       | Open Source            | JSON Web Token implementation in Python
+92   | pyparsing                            | 3.3.3        | Open Source            | pyparsing - Classes and methods to define and execute par...
+93   | PyPika                               | 0.51.1       | Apache Software License | A SQL query builder API for Python
+94   | pyproject_hooks                      | 1.3.3        | Open Source            | Wrappers to call pyproject.toml-based build backend hooks.
+95   | pytest                               | 9.1.1        | Open Source            | pytest: simple powerful testing with Python
+96   | python-dateutil                      | 2.9.0.post0  | Dual License           | Extensions to the standard Python datetime module
+97   | python-dotenv                        | 1.2.4        | BSD-3-Clause           | Read key-value pairs from a .env file and set them as env...
+98   | python-multipart                     | 0.0.32       | Apache Software License | A streaming multipart parser for Python
+99   | pywin32                              | 312          | PSF                    | Python for Windows Extensions
+100  | PyYAML                               | 6.0.3        | MIT                    | YAML parser and emitter for Python
+101  | referencing                          | 0.37.0       | Open Source            | JSON Referencing + Python
+102  | requests                             | 2.34.2       | Apache-2.0             | Python HTTP for Humans.
+103  | requests-oauthlib                    | 2.0.0        | ISC                    | OAuthlib authentication support for Requests.
+104  | rich                                 | 15.0.0       | MIT                    | Render rich text, tables, progress bars, syntax highlight...
+105  | rpds-py                              | 2026.9.1     | Open Source            | Python bindings to Rust's persistent data structures (rpds)
+106  | shellingham                          | 1.5.4        | ISC License            | Tool to Detect Surrounding Shell
+107  | simpleeval                           | 1.0.8        | MIT                    | A simple, safe single expression evaluator library.
+108  | six                                  | 1.17.0       | MIT                    | Python 2 and 3 compatibility utilities
+109  | sniffio                              | 1.3.1        | MIT OR Apache-2.0      | Sniff out which async library your code is running under
+110  | SQLAlchemy                           | 2.1.3        | Open Source            | Database Abstraction Library
+111  | sse-starlette                        | 3.5.0        | Open Source            | SSE plugin for Starlette
+112  | starlette                            | 1.7.0        | Open Source            | The little ASGI library that shines.
+113  | tenacity                             | 9.1.4        | Apache 2.0             | Retry code until it succeeds
+114  | tokenizers                           | 0.23.3       | Apache Software License | 
+115  | tqdm                                 | 4.70.1       | MPL-2.0 AND MIT        | Fast, Extensible Progress Meter
+116  | truststore                           | 0.10.4       | Open Source            | Verify certificates using native system trust stores
+117  | typer                                | 0.27.3       | Open Source            | Typer, build great CLIs. Easy to code. Based on Python ty...
+118  | typing-inspection                    | 0.4.4        | Open Source            | Runtime typing introspection tools
+119  | typing_extensions                    | 4.16.0       | Open Source            | Backported and Experimental Type Hints for Python 3.9+
+120  | tzdata                               | 2026.5       | Apache-2.0             | Provider of IANA time zone data
+121  | uritemplate                          | 4.2.0        | BSD 3-Clause OR Apache | Implementation of RFC 6570 URI Templates
+122  | urllib3                              | 2.8.0        | Open Source            | HTTP library with thread-safe connection pooling, file po...
+123  | uvicorn                              | 0.54.0       | Open Source            | The lightning-fast ASGI server.
+124  | watchfiles                           | 1.3.0        | MIT                    | Simple, modern and high performance file watching and cod...
+125  | websocket-client                     | 1.9.2        | Apache-2.0             | WebSocket client for Python with low level API options
+126  | websockets                           | 16.1.1       | Open Source            | An implementation of the WebSocket Protocol (RFC 6455 & 7...
+127  | yarl                                 | 1.25.1       | Apache-2.0             | Yet another URL library
+
+====================================================================================================
+DANH SÁCH DẠNG REQUIREMENTS (NAME==VERSION)
+====================================================================================================
+absl-py==2.5.0
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.4
+aiohttp-retry==2.9.1
+aiosignal==1.4.0
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+argon2-cffi==25.1.0
+argon2-cffi-bindings==26.1.0
+attrs==26.1.0
+bcrypt==5.0.0
+build==1.6.1
+casbin==1.43.0
+certifi==2026.7.22
+cffi==2.1.1
+charset-normalizer==3.5.2
+chromadb==1.5.9
+click==8.5.0
+colorama==0.4.6
+cryptography==50.0.2
+distro==1.9.0
+durationpy==0.11
+fastapi==0.142.2
+filelock==4.1.0
+flatbuffers==25.12.19
+frozenlist==1.8.0
+fsspec==2026.9.0
+google-ai-generativelanguage==0.6.15
+google-api-core==2.33.0
+google-api-python-client==2.201.0
+google-auth==2.60.0
+google-auth-httplib2==0.4.4
+google-genai==2.28.0
+google-generativeai==0.8.6
+googleapis-common-protos==1.75.0
+grpcio==1.84.0
+grpcio-status==1.71.2
+h11==0.16.0
+hf-xet==1.7.0
+httpcore==1.0.9
+httpcore2==2.13.1
+httplib2==0.32.0
+httptools==0.8.0
+httpx==0.28.1
+httpx2==2.13.1
+huggingface_hub==2.2.0
+idna==3.20
+importlib_resources==7.1.0
+iniconfig==2.3.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+kubernetes==37.0.1
+markdown-it-py==4.2.0
+mcp==2.3.0
+mcp-types==2.3.0
+mdurl==0.1.2
+mmh3==5.3.1
+multidict==6.9.1
+numpy==2.5.3
+oauthlib==4.0.0
+onnxruntime==1.31.0
+opentelemetry-api==1.45.1
+opentelemetry-exporter-otlp-common==0.66b1
+opentelemetry-exporter-otlp-proto-common==1.45.1
+opentelemetry-exporter-otlp-proto-grpc==1.45.1
+opentelemetry-proto==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-semantic-conventions==0.66b1
+orjson==3.13.0
+overrides==7.7.0
+packaging==26.3
+passlib==1.7.4
+pip==25.2
+pluggy==1.6.0
+propcache==0.5.4
+proto-plus==1.28.2
+protobuf==7.36.2
+psycopg==3.3.6
+psycopg-binary==3.3.6
+psycopg2==2.9.13
+psycopg2-binary==2.9.13
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+pybase64==1.5.1
+pycparser==3.0
+pydantic==2.13.5
+pydantic-settings==2.15.0
+pydantic_core==2.46.5
+Pygments==2.21.0
+PyJWT==2.15.1
+pyparsing==3.3.3
+PyPika==0.51.1
+pyproject_hooks==1.3.3
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+python-dotenv==1.2.4
+python-multipart==0.0.32
+pywin32==312
+PyYAML==6.0.3
+referencing==0.37.0
+requests==2.34.2
+requests-oauthlib==2.0.0
+rich==15.0.0
+rpds-py==2026.9.1
+shellingham==1.5.4
+simpleeval==1.0.8
+six==1.17.0
+sniffio==1.3.1
+SQLAlchemy==2.1.3
+sse-starlette==3.5.0
+starlette==1.7.0
+tenacity==9.1.4
+tokenizers==0.23.3
+tqdm==4.70.1
+truststore==0.10.4
+typer==0.27.3
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+tzdata==2026.5
+uritemplate==4.2.0
+urllib3==2.8.0
+uvicorn==0.54.0
+watchfiles==1.3.0
+websocket-client==1.9.2
+websockets==16.1.1
+yarl==1.25.1

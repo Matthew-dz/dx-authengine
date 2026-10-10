@@ -114,7 +114,7 @@
         <div id="page-orders">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h3 class="h4 mb-0 text-gray-800 fw-bold">Quản lý Đơn hàng</h3>
-                <button class="btn btn-sm btn-outline-secondary" onclick="loadOrders()"><i class="fas fa-sync-alt me-1"></i> Làm mới dữ liệu</button>
+                <button id="btnRefreshOrders" class="btn btn-sm btn-outline-secondary" onclick="manualRefreshOrders()"><i class="fas fa-sync-alt me-1"></i> Làm mới dữ liệu</button>
             </div>
 
             <div class="card card-custom">
@@ -230,11 +230,12 @@
                     <div class="table-responsive">
                         <table class="table table-sm table-striped align-middle">
                             <thead class="table-dark">
+                                <tr>
                                     <th style="width: 15%;">Thời gian</th>
                                     <th style="width: 10%;">Nhân viên</th>
-                                    <th style="width: 15%;" class="text-center">Mã ĐH</th>
+                                    <th style="width: 22%;">Sản phẩm & Khách hàng</th>
                                     <th style="width: 10%;" class="text-center">Quyết định</th>
-                                    <th style="width: 40%;" class="text-center">Lý do</th>
+                                    <th style="width: 33%;" class="text-center">Lý do</th>
                                     <th style="width: 10%;" class="text-center" id="thAction">Hành động</th>
                                 </tr>
                             </thead>
@@ -767,13 +768,22 @@
         employeeModal.show();
     }
     
-    async function loadEmployees() {
+    async function loadEmployees(showSpinner = false) {
         const tbody = document.getElementById('employeesTableBody');
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Đang tải...</td></tr>';
+        const hasRows = tbody.children.length > 0 && !tbody.querySelector('.spinner-border');
+        if (showSpinner || !hasRows) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-2"></span> Đang tải...</td></tr>';
+        }
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/employees', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             const json = await res.json();
             const emps = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
+            
+            if (emps.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">Chưa có nhân viên nào trong danh sách</td></tr>';
+                return;
+            }
+
             tbody.innerHTML = '';
             emps.forEach(emp => {
                 const tr = document.createElement('tr');
@@ -801,7 +811,9 @@
                 tbody.appendChild(tr);
             });
         } catch (e) {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Lỗi kết nối Backend</td></tr>';
+            if (!hasRows) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger py-4">Lỗi kết nối Backend</td></tr>';
+            }
         }
     }
     
@@ -1023,7 +1035,10 @@
                     user: log.employee_username,
                     orderId: log.order_id,
                     productName: log.product_name,
-                    is_approved: log.decision === 'ALLOW',
+                    customerName: log.customer_name,
+                    customerEmail: log.customer_email,
+                    decision: log.decision,
+                    is_approved: ['ALLOW', 'APPROVED'].includes(String(log.decision || '').toUpperCase()),
                     reason: log.reason
                 };
             });
@@ -1048,9 +1063,11 @@
         }
         
         auditLogs.forEach(log => {
-            const statusBadge = log.is_approved 
-                ? '<span class="badge bg-success shadow-sm"><i class="fas fa-check-circle"></i> ALLOW</span>' 
-                : '<span class="badge bg-danger shadow-sm"><i class="fas fa-ban"></i> DENY</span>';
+            const decUpper = String(log.decision || (log.is_approved ? 'ALLOW' : 'DENY')).toUpperCase();
+            const isApproved = log.is_approved || ['ALLOW', 'APPROVED'].includes(decUpper);
+            const statusBadge = isApproved 
+                ? `<span class="badge bg-success shadow-sm"><i class="fas fa-check-circle"></i> ${decUpper}</span>` 
+                : `<span class="badge bg-danger shadow-sm"><i class="fas fa-ban"></i> ${decUpper}</span>`;
                 
             let userBadgeClass = 'bg-secondary';
             if (log.user === 'alice') userBadgeClass = 'bg-primary';
@@ -1058,11 +1075,21 @@
             
             const actionTd = isAdmin ? `<td class="text-center"><button class="btn btn-sm btn-outline-warning shadow-sm" onclick="changeDecision(${log.id})"><i class="fas fa-edit"></i> Đổi</button></td>` : `<td style="display:none;"></td>`;
             
+            const customerInfo = log.customerName 
+                ? `<div class="text-muted text-truncate" style="font-size: 0.82em; max-width: 220px;" title="${log.customerName} (${log.customerEmail || ''})"><i class="far fa-user me-1 text-primary"></i>${log.customerName}</div>`
+                : (log.customerEmail ? `<div class="text-muted text-truncate" style="font-size: 0.82em; max-width: 220px;" title="${log.customerEmail}"><i class="far fa-envelope me-1"></i>${log.customerEmail}</div>` : '');
+
             const row = `
                 <tr>
                     <td class="text-muted" style="font-size: 0.9em;"><i class="far fa-clock me-1"></i> ${log.timeStr}</td>
                     <td><span class="badge ${userBadgeClass} w-100">${log.user.toUpperCase()}</span></td>
-                    <td class="fw-bold text-primary text-center" title="${log.productName}">#${log.orderId}</td>
+                    <td>
+                        <div class="fw-bold text-dark text-truncate" style="max-width: 220px;" title="${log.productName}">${log.productName || 'Sản phẩm'}</div>
+                        <div class="d-flex align-items-center gap-1 my-1">
+                            <span class="badge bg-light text-primary border">#${log.orderId}</span>
+                        </div>
+                        ${customerInfo}
+                    </td>
                     <td class="text-center">${statusBadge}</td>
                     <td class="text-center"><div class="p-2 border rounded bg-light" style="font-size: 0.95em;">${log.reason}</div></td>
                     ${actionTd}
@@ -1073,34 +1100,54 @@
     }
 
     // --- ORDERS LOGIC ---
-    async function loadOrders() {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> Đang tải...</td></tr>';
+    async function manualRefreshOrders() {
+        const btn = document.getElementById('btnRefreshOrders');
+        const icon = btn ? btn.querySelector('i') : null;
+        if (icon) icon.classList.add('fa-spin');
+        await loadOrders(false);
+        if (icon) icon.classList.remove('fa-spin');
+    }
+
+    async function loadOrders(showSpinner = false) {
+        const hasExistingRows = tbody.children.length > 0 && !tbody.querySelector('.spinner-border');
+        // Chỉ hiển thị spinner nếu chưa có dòng nào HOẶC được yêu cầu rõ ràng (như lần đầu mở trang)
+        if (showSpinner || !hasExistingRows) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-2"></span> Đang tải...</td></tr>';
+        }
+
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/v1/orders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
+            const res = await fetch('http://127.0.0.1:8000/api/v1/orders', { 
+                headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } 
+            });
             const json = await res.json();
             const orders = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
             
             updateOrdersChart(); // Render the bar chart
 
-            tbody.innerHTML = '';
+            if (orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4"><i class="fas fa-check-circle text-success me-2"></i> Không có đơn hàng nào chờ xử lý.</td></tr>';
+                return;
+            }
+
+            let html = '';
             let hasRenderedEligible = false;
             let hasRenderedExpired = false;
 
             orders.forEach((o, index) => {
                 if (o.is_eligible && !hasRenderedEligible) {
-                    tbody.innerHTML += `<tr class="table-success text-success"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-check-circle me-2"></i> NHÓM ĐỦ ĐIỀU KIỆN HOÀN TIỀN</td></tr>`;
+                    html += `<tr class="table-success text-success"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-check-circle me-2"></i> NHÓM ĐỦ ĐIỀU KIỆN HOÀN TIỀN</td></tr>`;
                     hasRenderedEligible = true;
                 }
                 if (!o.is_eligible && !hasRenderedExpired) {
-                    tbody.innerHTML += `<tr class="table-secondary text-secondary"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-times-circle me-2"></i> NHÓM ĐÃ QUÁ HẠN</td></tr>`;
+                    html += `<tr class="table-secondary text-secondary"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-times-circle me-2"></i> NHÓM ĐÃ QUÁ HẠN</td></tr>`;
                     hasRenderedExpired = true;
                 }
 
                 const dateObj = new Date(o.order_date);
                 const dateStr = dateObj.toLocaleDateString('vi-VN') + ' ' + dateObj.toLocaleTimeString('vi-VN');
                 
-                tbody.innerHTML += `
-                    <tr class="${!o.is_eligible ? 'table-light text-muted' : ''}">
+                html += `
+                    <tr id="order-row-${o.id}" class="${!o.is_eligible ? 'table-light text-muted' : ''}">
                         <td class="fw-bold text-primary">${index + 1}</td>
                         <td class="text-truncate" style="max-width: 250px;" title="${o.product_name}">${o.product_name}</td>
                         <td class="${!o.is_eligible ? 'text-muted' : 'text-secondary'}" style="font-size: 0.9em;">
@@ -1117,8 +1164,12 @@
                     </tr>
                 `;
             });
+            tbody.innerHTML = html;
         } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger">Lỗi kết nối Backend!</td></tr>';
+            console.error('Lỗi kết nối Backend:', err);
+            if (!hasExistingRows) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-danger py-4">Lỗi kết nối Backend!</td></tr>';
+            }
         }
     }
 
@@ -1156,17 +1207,24 @@
             modal.hide();
             
             if (response.ok) {
-                // Lưu kết quả vào mảng Audit Logs toàn cục
+                // 1. Optimistic Update: Làm mờ dòng đơn hàng vừa duyệt ngay tức thì
+                const rowElem = document.getElementById(`order-row-${orderId}`);
+                if (rowElem) {
+                    rowElem.style.transition = 'all 0.3s ease';
+                    rowElem.style.opacity = '0.3';
+                }
+
+                // 2. Tải ngầm danh sách đơn hàng & logs ngay lập tức (không chờ bấm OK)
+                loadOrders(false); // Cập nhật ngầm không chớp spinner
                 loadLogs();
                 updateChart();
                 updateOrdersChart();
                 
+                // 3. Hiển thị thông báo thành công
                 Swal.fire({
                     icon: 'success',
                     title: 'Thành công!',
                     text: data.message || 'Giao dịch thành công, email đang được gửi'
-                }).then(() => {
-                    loadOrders();
                 });
             } else {
                 Swal.fire({

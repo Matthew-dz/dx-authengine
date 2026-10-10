@@ -12,7 +12,7 @@ from app.api.v1.auth import router as auth_router, legacy_router as auth_legacy_
 from app.api.v1.users import router as users_router, legacy_router as users_legacy_router
 from app.api.v1.employees import router as employees_router
 from app.api.v1.orders import router as orders_router
-from app.api.v1.refunds import router as refunds_router
+from app.api.v1.refunds import router as refunds_router, legacy_refund_router
 from app.api.v1.analytics import router as analytics_router
 from app.api.v1.ai import router as ai_router
 from app.api.v1.audit_logs import router as audit_logs_router
@@ -131,6 +131,7 @@ app.include_router(users_legacy_router)
 app.include_router(employees_router)
 app.include_router(orders_router)
 app.include_router(refunds_router)
+app.include_router(legacy_refund_router)
 app.include_router(analytics_router)
 app.include_router(ai_router)
 app.include_router(audit_logs_router)

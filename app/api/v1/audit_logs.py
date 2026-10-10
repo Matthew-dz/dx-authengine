@@ -31,9 +31,10 @@ def get_audit_logs(
     if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("audit_log"), "read") or current_user.role not in ["admin", "manager"]:
         raise HTTPException(status_code=403, detail="Không có quyền truy cập Audit Log. Chỉ Admin và Manager mới có quyền xem.")
 
+    import json
     query = db.query(models.AuditLog, models.Order, models.Customer) \
-        .join(models.Order, models.AuditLog.order_id == models.Order.id) \
-        .join(models.Customer, models.Order.customer_id == models.Customer.id)
+        .outerjoin(models.Order, models.AuditLog.order_id == models.Order.id) \
+        .outerjoin(models.Customer, models.Order.customer_id == models.Customer.id)
 
     if search:
         if search.isdigit():
@@ -56,10 +57,23 @@ def get_audit_logs(
     
     result = []
     for log, order, cust in logs:
+        p_name = order.product_name if order else None
+        c_name = cust.full_name if cust else None
+        c_email = cust.email if cust else None
+        if (not p_name or not c_name) and log.details:
+            try:
+                dt = json.loads(log.details)
+                p_name = p_name or dt.get("product_name")
+                c_name = c_name or dt.get("customer_name")
+                c_email = c_email or dt.get("customer_email")
+            except Exception:
+                pass
         result.append({
             "id": log.id,
             "order_id": log.order_id,
-            "product_name": order.product_name,
+            "product_name": p_name or (f"Đơn hàng #{log.order_id}" if log.order_id else "Sản phẩm"),
+            "customer_name": c_name,
+            "customer_email": c_email,
             "employee_username": log.employee_username,
             "decision": log.decision,
             "reason": log.reason,

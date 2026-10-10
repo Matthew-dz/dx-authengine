@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     CHROMA_DATA_PATH: str = Field(default="./chroma_data", description="Đường dẫn lưu trữ ChromaDB cục bộ")
     CHROMA_COLLECTION_NAME: str = Field(default="dxos_knowledge_base", description="Tên collection ChromaDB")
 
+    # SMTP Configuration
+    SMTP_SERVER: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SENDER_EMAIL: str = ""
+    SENDER_PASSWORD: str = ""
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 # Khởi tạo một instance duy nhất (Singleton) để dùng chung cho toàn dự án
