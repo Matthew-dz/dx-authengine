@@ -433,7 +433,8 @@
             });
             
             if (res.ok) {
-                return await res.json();
+                const json = await res.json();
+                return json.data !== undefined ? json.data : json;
             } else {
                 // CRITICAL: Token hết hạn hoặc không hợp lệ → force logout
                 localStorage.removeItem('access_token');
@@ -462,25 +463,47 @@
             loginView.classList.add('d-none');
             dashboardView.classList.remove('d-none');
             
-            // Cập nhật giao diện Navbar từ API /me response
-            document.getElementById('nav-user-name').innerText = userProfile.full_name;
+            // Cập nhật giao diện Navbar từ API /me response (Unified Identity)
+            document.getElementById('nav-user-name').innerText = userProfile.full_name || userProfile.username;
             document.getElementById('nav-user-role').innerText = userProfile.role;
-            document.getElementById('nav-user-avatar').src = `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.full_name)}&background=0D8ABC&color=fff`;
+            document.getElementById('nav-user-avatar').src = userProfile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.full_name || 'User')}&background=0D8ABC&color=fff`;
             
-            // Ẩn hiện phần Roles theo quyền Admin (dùng role từ /me)
+            // UI Cấu hình Động (Bước 5.4 - Dynamic UI Configuration)
             const navEmployeesElement = document.getElementById('nav-employees');
             const salesRefundLimit = document.getElementById('salesRefundLimit');
             const btnSaveSettings = document.getElementById('btnSaveSettings');
             
-            if (userProfile.role.toLowerCase().includes('admin')) {
-                navEmployeesElement.style.display = 'block';
-                salesRefundLimit.disabled = false;
-                btnSaveSettings.disabled = false;
-            } else {
-                navEmployeesElement.style.display = 'none';
-                salesRefundLimit.disabled = true;
-                btnSaveSettings.disabled = true;
+            try {
+                const permRes = await fetch('http://127.0.0.1:8000/api/v1/auth/my-permissions', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (permRes.ok) {
+                    const permJson = await permRes.json();
+                    const perms = permJson.data || permJson;
+                    const menus = perms.menus || [];
+                    
+                    if (navEmployeesElement) {
+                        navEmployeesElement.style.display = menus.includes('employees') ? 'block' : 'none';
+                    }
+                    if (salesRefundLimit && btnSaveSettings) {
+                        const canConfigure = menus.includes('system') || (perms.actions && perms.actions.system);
+                        salesRefundLimit.disabled = !canConfigure;
+                        btnSaveSettings.disabled = !canConfigure;
+                    }
+                }
+            } catch (permErr) {
+                console.warn('Không thể nạp permissions động, fallback theo role:', permErr);
+                if (userProfile.role.toLowerCase().includes('admin')) {
+                    navEmployeesElement.style.display = 'block';
+                    salesRefundLimit.disabled = false;
+                    btnSaveSettings.disabled = false;
+                } else {
+                    navEmployeesElement.style.display = 'none';
+                    salesRefundLimit.disabled = true;
+                    btnSaveSettings.disabled = true;
+                }
             }
+
             
             // Tải dữ liệu
             const activeTab = localStorage.getItem('activeTab') || 'nav-orders';

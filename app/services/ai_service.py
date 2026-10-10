@@ -418,14 +418,19 @@ class AIService:
         self,
         user_query: str,
         current_user: models.Employee,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        context_type: Optional[str] = None,
+        context_id: Optional[int] = None
     ) -> AIRecommendationResponse:
         return chat_with_ai(
             user_query=user_query,
             current_user=current_user,
             db=self.db,
-            session_id=session_id
+            session_id=session_id,
+            context_type=context_type,
+            context_id=context_id
         )
+
 
 
 AGENTIC_SYSTEM_INSTRUCTION = (
@@ -448,11 +453,14 @@ def chat_with_ai(
     user_query: str,
     current_user: models.Employee,
     db: Session,
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    context_type: Optional[str] = None,
+    context_id: Optional[int] = None
 ) -> AIRecommendationResponse:
     """
     Agentic AI có nhận thức quyền hạn (Context-Aware Agentic AI):
     - Đăng ký các công cụ SecureAITools (get_order, get_refund, search_policy, create_refund_request).
+    - Tự động nhận diện ngữ cảnh cục bộ (Local Context Awareness - Bước 5.4): Gọi ngầm Data Tool tương ứng và ép vào System Prompt trước khi gửi LLM.
     - Vòng lặp Agent Loop xử lý function_call từ Gemini.
     - Bảo vệ ngắt mạch: step_count đếm tối đa 3 lần gọi liên tiếp để chống lặp vô hạn.
     - Cơ chế Human-in-the-loop: Chặn tự động approve/reject, trả về pending_action.
@@ -474,20 +482,52 @@ def chat_with_ai(
         tool_kit.create_refund_request
     ]
 
+    collected_citations = set()
+    effective_system_instruction = AGENTIC_SYSTEM_INSTRUCTION
+
+    # Tự động gọi ngầm Data Tool tương ứng và ép vào System Prompt (Bước 5.4)
+    if context_type and context_id is not None:
+        context_data_str = ""
+        c_type = str(context_type).lower().strip()
+        try:
+            c_id = int(context_id)
+            if c_type in ["refund", "refund_request", "refunds"]:
+                context_data_str = tool_kit.get_refund(refund_id=c_id)
+                collected_citations.add("Refund Database")
+            elif c_type in ["order", "orders"]:
+                context_data_str = tool_kit.get_order(order_id=c_id)
+                collected_citations.add("Order Database")
+            else:
+                logger.warning(f"Chưa hỗ trợ tự động nạp context_type: {context_type}")
+        except Exception as e:
+            logger.error(f"Lỗi khi nạp ngầm local context ({context_type}:{context_id}): {e}")
+
+        if context_data_str:
+            effective_system_instruction += (
+                f"\n\n[NGỮ CẢNH CỤC BỘ HIỆN TẠI (LOCAL CONTEXT)]:\n"
+                f"Người dùng đang xem và thao tác trên đối tượng {context_type} (ID: {context_id}).\n"
+                f"Dữ liệu của đối tượng đã được hệ thống trích xuất tự động qua công cụ nội bộ:\n"
+                f"<business_data type=\"{context_type}\" id=\"{context_id}\">\n"
+                f"{context_data_str}\n"
+                f"</business_data>\n"
+                f"Hãy ưu tiên sử dụng dữ liệu trong thẻ <business_data> trên để giải thích hoặc trả lời trực tiếp câu hỏi của người dùng "
+                f"(kể cả khi người dùng chỉ hỏi ngắn gọn như 'Đủ điều kiện duyệt không?', 'Có hoàn tiền được không?')."
+            )
+
     deterministic_config = genai.GenerationConfig(temperature=0.0)
 
-    # Khởi tạo model kèm Function Calling tools và temperature=0.0
+    # Khởi tạo model kèm Function Calling tools, temperature=0.0 và System Prompt chứa Local Context
     try:
         agent_model = genai.GenerativeModel(
             model_name=PRIMARY_MODEL_NAME,
-            system_instruction=AGENTIC_SYSTEM_INSTRUCTION,
+            system_instruction=effective_system_instruction,
             generation_config=deterministic_config,
             tools=tool_funcs
         )
     except Exception:
         agent_model = genai.GenerativeModel(
             model_name=FALLBACK_MODEL_NAME,
-            system_instruction=AGENTIC_SYSTEM_INSTRUCTION,
+            system_instruction=effective_system_instruction,
             generation_config=deterministic_config,
             tools=tool_funcs
         )
@@ -498,7 +538,7 @@ def chat_with_ai(
     except NotFound:
         fallback_model = genai.GenerativeModel(
             model_name=FALLBACK_MODEL_NAME,
-            system_instruction=AGENTIC_SYSTEM_INSTRUCTION,
+            system_instruction=effective_system_instruction,
             generation_config=deterministic_config,
             tools=tool_funcs
         )
@@ -510,8 +550,8 @@ def chat_with_ai(
 
     # Vòng lặp Agentic Loop kèm Circuit Breaker (ngắt mạch tối đa 3 bước)
     step_count = 0
-    collected_citations = set()
     detected_pending_action = None
+
 
     while step_count < 3:
         function_calls = []
@@ -628,6 +668,9 @@ def chat_with_ai(
         if not match:
             match = re.search(r'#?(\d+)', user_q_lower)
         found_id = int(match.group(1)) if match else None
+        if not found_id and context_type and str(context_type).lower().strip() in ["refund", "refund_request", "refunds"]:
+            found_id = context_id
+
         if found_id:
             if any(kw in user_q_lower for kw in ["duyệt", "phê duyệt", "approve"]):
                 parsed_response.pending_action = {"tool": "approve_refund", "refund_id": found_id}
@@ -645,7 +688,13 @@ def chat_with_ai(
             tool_name="chat_with_ai",
             action_type="AGENTIC_CHAT",
             action_status="SUCCESS",
-            input_context={"query": user_query, "step_count": step_count, "session_id": session_id},
+            input_context={
+                "query": user_query,
+                "step_count": step_count,
+                "session_id": session_id,
+                "context_type": context_type,
+                "context_id": context_id
+            },
             output_result=parsed_response.model_dump(mode="json"),
             context_snapshot={
                 "business_data": {"user_query": user_query, "step_count": step_count},

@@ -62,9 +62,13 @@ class AIRecommendationResponse(BaseModel):
 class AIChatRequest(BaseModel):
     """
     Yêu cầu trò chuyện tương tác với Agentic AI Assistant.
+    Hỗ trợ Local Context (Bước 5.4 - Unified Experience).
     """
     query: str = Field(..., description="Câu hỏi hoặc yêu cầu nghiệp vụ của người dùng")
     session_id: Optional[str] = Field(None, description="Mã phiên làm việc với AI Assistant")
+    context_type: Optional[str] = Field(None, description="Loại ngữ cảnh nghiệp vụ (ví dụ: 'refund', 'order')")
+    context_id: Optional[int] = Field(None, description="ID của đối tượng ngữ cảnh tương ứng")
+
 
 
 class CreateRefundArgs(BaseModel):

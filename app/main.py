@@ -12,6 +12,7 @@ from app.schemas.common import StandardResponse
 from app.api.v1 import (
     refunds,
     auth,
+    users,
     employees,
     analytics,
     ai,
@@ -19,6 +20,7 @@ from app.api.v1 import (
     audit_logs,
     system
 )
+
 
 models.Base.metadata.create_all(bind=engine)
 load_dotenv()
@@ -83,7 +85,19 @@ def bootstrap_admin():
         ("employee", "dashboard", "read", ""),
         ("staff_sales", "dashboard", "read", ""),
         ("sale", "dashboard", "read", ""),
+        # Nhóm AI Assistant (Bước 5.4 - Unified Experience)
+        ("admin", "ai", "read", ""),
+        ("admin", "ai", "chat", ""),
+        ("manager", "ai", "read", ""),
+        ("manager", "ai", "chat", ""),
+        ("staff_sales", "ai", "read", ""),
+        ("staff_sales", "ai", "chat", ""),
+        ("employee", "ai", "read", ""),
+        ("employee", "ai", "chat", ""),
+        ("sale", "ai", "read", ""),
+        ("sale", "ai", "chat", ""),
     ]
+
     current_policies = enforcer.get_policy()
     changed = False
     for p in refund_policies:
@@ -114,7 +128,9 @@ def bootstrap_admin():
 # ======================= UNIFIED API ROUTER (BƯỚC 5.1) =======================
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(users.router)
 api_v1_router.include_router(refunds.router)
+
 api_v1_router.include_router(employees.router)
 api_v1_router.include_router(analytics.router)
 api_v1_router.include_router(ai.router)

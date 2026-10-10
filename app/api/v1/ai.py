@@ -101,14 +101,16 @@ def chat_with_agentic_ai(
     recommendation = ai_service.chat_with_ai(
         user_query=req.query,
         current_user=current_user,
-        db=db,
-        session_id=req.session_id
+        session_id=req.session_id,
+        context_type=req.context_type,
+        context_id=req.context_id
     )
     return StandardResponse(
         success=True,
         message="Phản hồi từ AI Assistant",
         data=recommendation
     )
+
 
 
 @router.post("/execute-pending-action", response_model=StandardResponse[dict])

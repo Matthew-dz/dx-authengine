@@ -39,5 +39,16 @@ p, manager, dashboard, read,
 p, staff_sales, dashboard, read, 
 p, employee, dashboard, read, 
 p, sale, dashboard, read, 
+p, admin, ai, read, 
+p, admin, ai, chat, 
+p, manager, ai, read, 
+p, manager, ai, chat, 
+p, staff_sales, ai, read, 
+p, staff_sales, ai, chat, 
+p, employee, ai, read, 
+p, employee, ai, chat, 
+p, sale, ai, read, 
+p, sale, ai, chat, 
 g, bob, staff_sales
-g, rayden, admin
+g, rayden, admin
+

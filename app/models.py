@@ -28,6 +28,13 @@ class Employee(Base):
 
     refund_requests = relationship("RefundRequest", back_populates="employee")
 
+    @property
+    def avatar(self) -> str:
+        """Đường dẫn avatar hiển thị đồng nhất trên UI header (Unified Experience)."""
+        name = self.full_name or self.username or "User"
+        return f"https://ui-avatars.com/api/?name={name}&background=0D8ABC&color=fff"
+
+
 class Customer(Base):
     __tablename__ = "customers"
     id = Column(Integer, primary_key=True, index=True)

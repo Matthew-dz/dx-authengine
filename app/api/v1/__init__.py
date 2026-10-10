@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     refunds,
     auth,
+    users,
     employees,
     analytics,
     ai,
@@ -13,6 +14,7 @@ from app.api.v1 import (
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(auth.router)
+api_v1_router.include_router(users.router)
 api_v1_router.include_router(refunds.router)
 api_v1_router.include_router(employees.router)
 api_v1_router.include_router(analytics.router)
@@ -24,6 +26,7 @@ api_v1_router.include_router(system.router)
 __all__ = [
     "refunds",
     "auth",
+    "users",
     "employees",
     "analytics",
     "ai",
