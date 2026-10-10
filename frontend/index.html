@@ -161,13 +161,12 @@
                                     <th>Chức vụ</th>
                                     <th>Quê quán</th>
                                     <th>SĐT</th>
-                                    <th>CCCD</th>
                                     <th>Vai trò</th>
                                     <th>Thao tác</th>
                                 </tr>
                             </thead>
                             <tbody id="employeesTableBody">
-                                <tr><td colspan="8" class="text-center text-muted">Đang tải dữ liệu...</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted">Đang tải dữ liệu...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -419,38 +418,95 @@
     const tbody = document.getElementById('orderTableBody');
     const modal = new bootstrap.Modal(document.getElementById('refundModal'));
     let auditLogs = []; // Lưu log toàn cục
+    let userProfile = null; // Identity Layer: profile lấy từ API /me
 
-    // --- KIỂM TRA ĐĂNG NHẬP ---
-    function checkLoginState() {
-        const currentUser = localStorage.getItem('currentUser');
-        if (currentUser) {
-            const userObj = JSON.parse(currentUser);
+    // ======================= IDENTITY LAYER =======================
+    // Hàm gọi API /me để lấy profile user từ server (source of truth)
+    async function fetchUserProfile() {
+        const token = localStorage.getItem('access_token');
+        if (!token) return null;
+        
+        try {
+            const res = await fetch('http://127.0.0.1:8000/api/v1/me', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            
+            if (res.ok) {
+                const json = await res.json();
+                return json.data !== undefined ? json.data : json;
+            } else {
+                // CRITICAL: Token hết hạn hoặc không hợp lệ → force logout
+                localStorage.removeItem('access_token');
+                window.location.href = 'index.html';
+                return null;
+            }
+        } catch (error) {
+            console.error('Lỗi kết nối API /me:', error);
+            return null;
+        }
+    }
+
+    // --- KIỂM TRA ĐĂNG NHẬP (Identity Layer) ---
+    async function checkLoginState() {
+        const token = localStorage.getItem('access_token');
+        if (token) {
+            // Gọi API /me để lấy profile thực từ server
+            userProfile = await fetchUserProfile();
+            if (!userProfile) {
+                // Token không hợp lệ, hiện lại trang login
+                loginView.classList.remove('d-none');
+                dashboardView.classList.add('d-none');
+                return;
+            }
+            
             loginView.classList.add('d-none');
             dashboardView.classList.remove('d-none');
             
-            // Cập nhật giao diện Navbar
-            document.getElementById('nav-user-name').innerText = userObj.name;
-            document.getElementById('nav-user-role').innerText = userObj.role;
-            document.getElementById('nav-user-avatar').src = `https://ui-avatars.com/api/?name=${userObj.name}&background=0D8ABC&color=fff`;
+            // Cập nhật giao diện Navbar từ API /me response (Unified Identity)
+            document.getElementById('nav-user-name').innerText = userProfile.full_name || userProfile.username;
+            document.getElementById('nav-user-role').innerText = userProfile.role;
+            document.getElementById('nav-user-avatar').src = userProfile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.full_name || 'User')}&background=0D8ABC&color=fff`;
             
-            // Ẩn hiện phần Roles theo quyền Admin
+            // UI Cấu hình Động (Bước 5.4 - Dynamic UI Configuration)
             const navEmployeesElement = document.getElementById('nav-employees');
             const salesRefundLimit = document.getElementById('salesRefundLimit');
             const btnSaveSettings = document.getElementById('btnSaveSettings');
             
-            if (userObj.role.toLowerCase().includes('admin')) {
-                navEmployeesElement.style.display = 'block';
-                salesRefundLimit.disabled = false;
-                btnSaveSettings.disabled = false;
-            } else {
-                navEmployeesElement.style.display = 'none';
-                salesRefundLimit.disabled = true;
-                btnSaveSettings.disabled = true;
+            try {
+                const permRes = await fetch('http://127.0.0.1:8000/api/v1/auth/my-permissions', {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+                if (permRes.ok) {
+                    const permJson = await permRes.json();
+                    const perms = permJson.data || permJson;
+                    const menus = perms.menus || [];
+                    
+                    if (navEmployeesElement) {
+                        navEmployeesElement.style.display = menus.includes('employees') ? 'block' : 'none';
+                    }
+                    if (salesRefundLimit && btnSaveSettings) {
+                        const canConfigure = menus.includes('system') || (perms.actions && perms.actions.system);
+                        salesRefundLimit.disabled = !canConfigure;
+                        btnSaveSettings.disabled = !canConfigure;
+                    }
+                }
+            } catch (permErr) {
+                console.warn('Không thể nạp permissions động, fallback theo role:', permErr);
+                if (userProfile.role.toLowerCase().includes('admin')) {
+                    navEmployeesElement.style.display = 'block';
+                    salesRefundLimit.disabled = false;
+                    btnSaveSettings.disabled = false;
+                } else {
+                    navEmployeesElement.style.display = 'none';
+                    salesRefundLimit.disabled = true;
+                    btnSaveSettings.disabled = true;
+                }
             }
+
             
             // Tải dữ liệu
             const activeTab = localStorage.getItem('activeTab') || 'nav-orders';
-            if (activeTab === 'nav-employees' && !userObj.role.toLowerCase().includes('admin')) {
+            if (activeTab === 'nav-employees' && !userProfile.role.toLowerCase().includes('admin')) {
                 switchTab('nav-orders');
             } else {
                 switchTab(activeTab);
@@ -463,12 +519,13 @@
                 localStorage.removeItem('flashMessage');
             }
         } else {
+            userProfile = null;
             loginView.classList.remove('d-none');
             dashboardView.classList.add('d-none');
         }
     }
 
-    // --- XỬ LÝ LOGIN ---
+    // --- XỬ LÝ LOGIN (Identity Layer: chỉ lưu access_token) ---
     document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const usernameInput = document.getElementById('loginUsername').value;
@@ -481,21 +538,23 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: usernameInput, password: passwordInput })
             });
             
             if (res.ok) {
                 const data = await res.json();
-                localStorage.setItem('currentUser', JSON.stringify(data));
-                localStorage.setItem('access_token', data.access_token);
+                // CHỈ lưu access_token — không lưu role/username vào localStorage
+                const token = (data && data.data && data.data.access_token) || data.access_token;
+                localStorage.setItem('access_token', token);
                 
                 Swal.fire({
                     icon: 'success', title: 'Đăng nhập thành công!', toast: true,
                     position: 'top-end', showConfirmButton: false, timer: 2000
                 });
                 
-                checkLoginState();
+                // checkLoginState sẽ gọi /me để lấy profile
+                await checkLoginState();
             } else {
                 const err = await res.json();
                 Swal.fire({ icon: 'error', title: 'Thất bại', text: err.detail });
@@ -511,8 +570,8 @@
     // --- XỬ LÝ LOGOUT ---
     document.getElementById('btnLogout').addEventListener('click', (e) => {
         e.preventDefault();
-        localStorage.removeItem('currentUser');
         localStorage.removeItem('access_token');
+        userProfile = null;
         checkLoginState();
     });
 
@@ -588,8 +647,11 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/settings/policy', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             if (res.ok) {
-                const data = await res.json();
-                document.getElementById('salesRefundLimit').value = data.limit;
+                const json = await res.json();
+                const data = (json && json.data !== undefined) ? json.data : json;
+                if (data && data.limit !== undefined) {
+                    document.getElementById('salesRefundLimit').value = data.limit;
+                }
             }
         } catch (e) {
             console.error(e);
@@ -635,8 +697,7 @@
             return Swal.fire('Lỗi', 'Mật khẩu mới không khớp!', 'error');
         }
         
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (!currentUser) return Swal.fire('Lỗi', 'Chưa đăng nhập!', 'error');
+        if (!userProfile) return Swal.fire('Lỗi', 'Chưa đăng nhập!', 'error');
 
         btnChange.disabled = true;
         btnChange.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
@@ -682,43 +743,51 @@
             document.getElementById('empId').value = emp.id;
             document.getElementById('empUsername').value = emp.username;
             document.getElementById('empUsername').disabled = true;
-            document.getElementById('empPassword').value = emp.password; 
+            document.getElementById('empPassword').value = ''; 
             document.getElementById('empPassword').disabled = true;
-            document.getElementById('empFullName').value = emp.full_name;
-            document.getElementById('empPosition').value = emp.position;
-            document.getElementById('empHireDate').value = emp.hire_date;
-            document.getElementById('empPhone').value = emp.phone;
-            document.getElementById('empCCCD').value = emp.cccd;
-            document.getElementById('empAddress').value = emp.address;
-            document.getElementById('empHometown').value = emp.hometown;
-            document.getElementById('empRole').value = emp.role;
+            document.getElementById('empPassword').required = false;
+            document.getElementById('empFullName').value = (emp.full_name && emp.full_name !== 'null') ? emp.full_name : '';
+            document.getElementById('empPosition').value = (emp.position && emp.position !== 'null') ? emp.position : '';
+            document.getElementById('empHireDate').value = (emp.hire_date && emp.hire_date !== 'null') ? emp.hire_date : '';
+            document.getElementById('empPhone').value = (emp.phone && emp.phone !== 'null') ? emp.phone : '';
+            document.getElementById('empCCCD').value = (emp.cccd && emp.cccd !== 'null') ? emp.cccd : '';
+            document.getElementById('empCCCD').required = false;
+            document.getElementById('empAddress').value = (emp.address && emp.address !== 'null') ? emp.address : '';
+            document.getElementById('empHometown').value = (emp.hometown && emp.hometown !== 'null') ? emp.hometown : '';
+            document.getElementById('empRole').value = emp.role || 'staff_sales';
         } else {
             document.getElementById('employeeModalTitle').innerText = 'Thêm nhân viên mới';
             document.getElementById('employeeForm').reset();
             document.getElementById('empId').value = '';
             document.getElementById('empUsername').disabled = false;
             document.getElementById('empPassword').disabled = false;
+            document.getElementById('empPassword').required = true;
+            document.getElementById('empCCCD').required = true;
         }
         employeeModal.show();
     }
     
     async function loadEmployees() {
         const tbody = document.getElementById('employeesTableBody');
-        tbody.innerHTML = '<tr><td colspan="8" class="text-center">Đang tải...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">Đang tải...</td></tr>';
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/employees', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
-            const data = await res.json();
+            const json = await res.json();
+            const emps = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
             tbody.innerHTML = '';
-            data.forEach(emp => {
+            emps.forEach(emp => {
                 const tr = document.createElement('tr');
                 const empData = encodeURIComponent(JSON.stringify(emp));
+                const fullName = (emp.full_name && emp.full_name !== 'null') ? emp.full_name : 'Chưa cập nhật';
+                const position = (emp.position && emp.position !== 'null') ? emp.position : '-';
+                const hometown = (emp.hometown && emp.hometown !== 'null') ? emp.hometown : '-';
+                const phone = (emp.phone && emp.phone !== 'null') ? emp.phone : '-';
                 tr.innerHTML = `
                     <td class="fw-bold">#${emp.id}</td>
-                    <td><div class="fw-bold">${emp.full_name}</div><small class="text-muted">@${emp.username}</small></td>
-                    <td>${emp.position}</td>
-                    <td>${emp.hometown}</td>
-                    <td>${emp.phone}</td>
-                    <td>${emp.cccd}</td>
+                    <td><div class="fw-bold">${fullName}</div><small class="text-muted">@${emp.username}</small></td>
+                    <td>${position}</td>
+                    <td>${hometown}</td>
+                    <td>${phone}</td>
                     <td><span class="badge bg-primary">${emp.role}</span></td>
                     <td>
                         <button class="btn btn-sm btn-info text-white me-1" onclick="openEmployeeModal('${empData}')">
@@ -732,7 +801,7 @@
                 tbody.appendChild(tr);
             });
         } catch (e) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-danger">Lỗi kết nối Backend</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-danger">Lỗi kết nối Backend</td></tr>';
         }
     }
     
@@ -741,22 +810,26 @@
         const btn = document.getElementById('btnSaveEmployee');
         btn.disabled = true;
         const empId = document.getElementById('empId').value;
-        const payload = {
-            username: document.getElementById('empUsername').value,
-            password: document.getElementById('empPassword').value,
-            full_name: document.getElementById('empFullName').value,
-            position: document.getElementById('empPosition').value,
-            hire_date: document.getElementById('empHireDate').value,
-            phone: document.getElementById('empPhone').value,
-            cccd: document.getElementById('empCCCD').value,
-            address: document.getElementById('empAddress').value,
-            hometown: document.getElementById('empHometown').value,
-            role: document.getElementById('empRole').value,
-        };
-        
+        let payload;
         if (empId) {
-            delete payload.password; // Do not send existing hash to avoid double hashing
-            delete payload.username; // Username should not be updated
+            payload = {
+                full_name: document.getElementById('empFullName').value,
+                phone: document.getElementById('empPhone').value,
+                address: document.getElementById('empAddress').value
+            };
+        } else {
+            payload = {
+                username: document.getElementById('empUsername').value,
+                password: document.getElementById('empPassword').value,
+                full_name: document.getElementById('empFullName').value,
+                position: document.getElementById('empPosition').value,
+                hire_date: document.getElementById('empHireDate').value,
+                phone: document.getElementById('empPhone').value,
+                cccd: document.getElementById('empCCCD').value,
+                address: document.getElementById('empAddress').value,
+                hometown: document.getElementById('empHometown').value,
+                role: document.getElementById('empRole').value,
+            };
         }
         
         try {
@@ -939,8 +1012,9 @@
             
             const queryString = params.toString() ? '?' + params.toString() : '';
             const res = await fetch('http://127.0.0.1:8000/api/v1/audit-logs' + queryString, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
-            const data = await res.json();
-            auditLogs = data.map(log => {
+            const json = await res.json();
+            const rawLogs = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
+            auditLogs = rawLogs.map(log => {
                 const dateObj = new Date(log.created_at);
                 const timeStr = dateObj.toLocaleTimeString('vi-VN') + ' ' + dateObj.toLocaleDateString('vi-VN');
                 return {
@@ -967,8 +1041,7 @@
         noLogsMsg.style.display = 'none';
         logBody.innerHTML = '';
         
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        const isAdmin = currentUser && currentUser.role && currentUser.role.toLowerCase() === 'admin';
+        const isAdmin = userProfile && userProfile.role && userProfile.role.toLowerCase() === 'admin';
         const thAction = document.getElementById('thAction');
         if (thAction) {
             thAction.style.display = isAdmin ? 'table-cell' : 'none';
@@ -1004,7 +1077,8 @@
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> Đang tải...</td></tr>';
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/orders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
-            const data = await res.json();
+            const json = await res.json();
+            const orders = Array.isArray(json) ? json : (json && Array.isArray(json.data) ? json.data : []);
             
             updateOrdersChart(); // Render the bar chart
 
@@ -1012,7 +1086,7 @@
             let hasRenderedEligible = false;
             let hasRenderedExpired = false;
 
-            data.forEach((o, index) => {
+            orders.forEach((o, index) => {
                 if (o.is_eligible && !hasRenderedEligible) {
                     tbody.innerHTML += `<tr class="table-success text-success"><td colspan="6" class="fw-bold pt-3 pb-3"><i class="fas fa-check-circle me-2"></i> NHÓM ĐỦ ĐIỀU KIỆN HOÀN TIỀN</td></tr>`;
                     hasRenderedEligible = true;
@@ -1032,7 +1106,6 @@
                         <td class="${!o.is_eligible ? 'text-muted' : 'text-secondary'}" style="font-size: 0.9em;">
                             <div class="fw-bold text-dark">${o.customer_name || 'N/A'}</div>
                             <div>${o.customer_email || 'N/A'}</div>
-                            ${o.is_flagged ? '<span class="badge bg-danger mt-1"><i class="fas fa-exclamation-triangle"></i> Gian lận</span>' : ''}
                         </td>
                         <td class="text-success fw-bold">$${o.price}</td>
                         <td>${dateStr}</td>
@@ -1057,14 +1130,13 @@
 
     // --- XỬ LÝ HOÀN TIỀN VỚI TÀI KHOẢN ĐÃ LOGIN ---
     document.getElementById('btnConfirmRefund').addEventListener('click', async () => {
-        // Lấy username từ localStorage
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (!currentUser) {
+        // Lấy username từ userProfile (Identity Layer)
+        if (!userProfile) {
             Swal.fire('Lỗi', 'Phiên đăng nhập đã hết hạn', 'error');
             return;
         }
 
-        const username = currentUser.username;
+        const username = userProfile.username;
         const orderId = document.getElementById('hiddenOrderId').value;
         const btn = document.getElementById('btnConfirmRefund');
         
@@ -1115,8 +1187,7 @@
     checkLoginState();
 
     async function changeDecision(logId) {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        if (!currentUser || currentUser.role.toLowerCase() !== 'admin') {
+        if (!userProfile || userProfile.role.toLowerCase() !== 'admin') {
             Swal.fire('Lỗi', 'Chỉ admin mới có quyền!', 'error');
             return;
         }

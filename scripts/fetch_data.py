@@ -68,5 +68,33 @@ def fetch_and_save_data():
     else:
         print("Lỗi khi gọi API:", response.status_code)
 
+def init_casbin_policies():
+    from app.agent import enforcer
+    refund_policies = [
+        # Nhóm Nhân viên (Employee/Sale): Có quyền create và process
+        ("staff_sales", "refund", "create", ""),
+        ("staff_sales", "refund", "process", ""),
+        ("employee", "refund", "create", ""),
+        ("employee", "refund", "process", ""),
+        ("sale", "refund", "create", ""),
+        ("sale", "refund", "process", ""),
+        # Nhóm Quản lý (Manager/Admin): Có quyền approve và reject
+        ("manager", "refund", "approve", ""),
+        ("manager", "refund", "reject", ""),
+        ("admin", "refund", "approve", ""),
+        ("admin", "refund", "reject", ""),
+    ]
+    existing = enforcer.get_policy()
+    changed = False
+    for p in refund_policies:
+        if not any(ep[:4] == list(p) for ep in existing):
+            enforcer.add_policy(*p)
+            changed = True
+    if changed:
+        enforcer.save_policy()
+    print("Đã cấu hình chính sách Casbin cho module refund thành công.")
+
 if __name__ == "__main__":
     fetch_and_save_data()
+    init_casbin_policies()
+

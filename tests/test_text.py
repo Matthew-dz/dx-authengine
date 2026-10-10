@@ -1,14 +1,18 @@
 import asyncio
 import os
-from google.antigravity import Agent, LocalAgentConfig
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
 
 async def t():
-    agent = Agent(config=LocalAgentConfig(system_instructions='You are a helpful assistant.', api_key=os.getenv('GEMINI_API_KEY')))
-    async with agent as a:
-        res = await a.chat('Hello')
-        print(res.text)
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        return
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    res = await model.generate_content_async('Hello')
+    print(res.text)
 
-asyncio.run(t())
+if __name__ == "__main__":
+    asyncio.run(t())

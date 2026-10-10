@@ -1,3 +1,13 @@
+# ==========================================
+# Critical Security & Local Environment
+# ==========================================
+.env
+*.db
+venv/
+__pycache__/
+.pytest_cache/
+chroma_data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -222,3 +232,7 @@ __marimo__/
 # Security & Database
 *.db
 *.sqlite3
+
+# ChromaDB Vector Storage
+chroma_data/
+./chroma_data/

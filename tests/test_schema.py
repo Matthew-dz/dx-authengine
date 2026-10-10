@@ -1,7 +1,7 @@
 import asyncio
 import os
 from pydantic import BaseModel
-from google.antigravity import Agent, LocalAgentConfig
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,13 +10,14 @@ class RefundDecision(BaseModel):
     is_approved: bool
     reason: str
 
-from app.agent import check_abac_policy
-
 async def t():
-    agent = Agent(config=LocalAgentConfig(system_instructions='Use the tool.', tools=[check_abac_policy], api_key=os.getenv('GEMINI_API_KEY')))
-    async with agent as a:
-        res = await a.chat('Check refund for bob, transaction, refund, 15')
-        text = await res.text()
-        print("Text:", text)
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        return
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    res = await model.generate_content_async('Check refund for bob, transaction, refund, 15')
+    print("Text:", res.text)
 
-asyncio.run(t())
+if __name__ == "__main__":
+    asyncio.run(t())
