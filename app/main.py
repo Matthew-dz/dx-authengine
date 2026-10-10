@@ -99,6 +99,11 @@ def bootstrap_admin():
         import logging
         logging.getLogger("uvicorn.error").warning(f"Không thể index ChromaDB tại startup: {e}")
 
+    # Đăng ký các Event Handlers vào EventBus (Bước 5.2)
+    from app.events.event_bus import event_bus
+    from app.events.handlers.refund_handler import handle_refund_approved
+    event_bus.subscribe("RefundApproved", handle_refund_approved)
+
 
 # ======================= UNIFIED API ROUTER (BƯỚC 5.1) =======================
 api_v1_router = APIRouter(prefix="/api/v1")

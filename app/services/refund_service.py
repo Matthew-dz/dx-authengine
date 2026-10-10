@@ -10,6 +10,8 @@ from app.repositories.refund_repository import RefundRepository
 from app.agent import enforcer, Subject, Resource
 from app.email_service import send_notification_email
 from app.schemas import RefundRequestCreate
+from app.events.event_bus import event_bus
+from app.events.event import RefundApprovedEvent
 
 
 class RefundService:
@@ -231,12 +233,25 @@ class RefundService:
             self.db.commit()
             self.db.refresh(refund)
 
-            # Chạy ngầm gửi Email thông báo sau khi transaction commit thành công
-            if background_tasks and order and order.customer and order.customer.email:
-                cust_name = order.customer.full_name or "Quý khách"
-                subj = f"Thông báo kết quả xử lý hoàn tiền - DX-OS"
-                body = f"Kính gửi {cust_name},\n\nYêu cầu hoàn tiền cho đơn hàng #{order.id} ({order.product_name}) đã được phê duyệt thành công.\n\nTrân trọng,\nĐội ngũ CSKH DX-OS."
-                background_tasks.add_task(send_notification_email, order.customer.email, subj, body)
+            # CRITICAL (BƯỚC 5.2): Tách rời Business Logic khỏi tác vụ phụ trợ
+            # Chỉ phát tán RefundApprovedEvent ngay sau khi db.commit() thực thi thành công
+            event = RefundApprovedEvent(
+                event_type="RefundApproved",
+                entity_id=refund.id,
+                user_id=current_user.id,
+                data={
+                    "refund_id": refund.id,
+                    "order_id": refund.order_id,
+                    "employee_username": current_user.username,
+                    "employee_id": current_user.id,
+                    "notes": notes,
+                    "old_state": old_state.value if hasattr(old_state, "value") else str(old_state),
+                    "product_name": order.product_name if order else None,
+                    "customer_name": order.customer.full_name if (order and order.customer) else None,
+                    "customer_email": order.customer.email if (order and order.customer) else None,
+                }
+            )
+            event_bus.publish(event, background_tasks)
 
             return refund
         except HTTPException:
