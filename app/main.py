@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
-from typing import Optional
+from typing import Optional, List
 from sqlalchemy import or_
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,18 +7,34 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from app import models
 from app.database import engine, SessionLocal
-from app.agent import process_refund_request, RefundDecision, enforcer
+from app.agent import enforcer, Subject, Resource, generate_refund_content
 from app.email_service import send_refund_email
-import hashlib
-
-def get_password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return get_password_hash(plain_password) == hashed_password
+from app.security import create_access_token, get_current_user, get_password_hash, verify_password
+from app.schemas import EmployeeResponse
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="DX-AuthEngine API")
+
+@app.on_event("startup")
+def bootstrap_admin():
+    # Kiểm tra xem quyền cho tài khoản admin mặc định đã tồn tại chưa
+    # Nếu chưa, bơm quyền khởi thủy để không bị lockout
+    policies = enforcer.get_policy()
+    has_admin_policy = any(p[0] == "admin" for p in policies)
+    if not has_admin_policy:
+        enforcer.add_policy("admin", "employee", "read", "")
+        enforcer.add_policy("admin", "employee", "write", "")
+        enforcer.add_policy("admin", "transaction", "read", "")
+        enforcer.add_policy("admin", "transaction", "refund", "999999")
+        enforcer.add_policy("admin", "audit_log", "read", "")
+        enforcer.add_policy("admin", "audit_log", "write", "")
+        enforcer.add_policy("admin", "role", "read", "")
+        enforcer.add_policy("admin", "role", "write", "")
+        enforcer.add_policy("admin", "policy", "read", "")
+        enforcer.add_policy("admin", "policy", "write", "")
+        enforcer.save_policy()
+
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,11 +57,9 @@ class LoginRequest(BaseModel):
     password: str
 
 class RefundRequest(BaseModel):
-    username: str
     order_id: int
 
 class RoleUpdateRequest(BaseModel):
-    requester: str
     username: str
     new_role: str
 
@@ -53,22 +67,13 @@ class PolicyUpdateRequest(BaseModel):
     new_limit: int
 
 class ChangePasswordRequest(BaseModel):
-    username: str
     old_password: str
     new_password: str
 
 class AuditLogUpdateDecisionRequest(BaseModel):
-    requester: str
     new_decision: str
     reason: str
 
-class RefundAPIResponse(BaseModel):
-    is_approved: bool
-    reason: str
-    email_template: str
-    fraud_warning: bool
-    customer_email: str
-    customer_name: str
 
 class EmployeeCreate(BaseModel):
     username: str
@@ -99,18 +104,26 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     if not user or not verify_password(req.password, user.password):
         raise HTTPException(status_code=401, detail="Tài khoản hoặc mật khẩu không chính xác")
     
+    access_token = create_access_token({"sub": user.username, "role": user.role})
+    
     return {
+        "access_token": access_token,
+        "token_type": "bearer",
         "username": user.username,
         "name": user.full_name,
         "role": user.role
     }
 
-@app.get("/api/v1/employees")
-def get_employees(db: Session = Depends(get_db)):
+@app.get("/api/v1/employees", response_model=List[EmployeeResponse])
+def get_employees(current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("employee"), "read"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     return db.query(models.Employee).all()
 
-@app.post("/api/v1/employees")
-def create_employee(req: EmployeeCreate, db: Session = Depends(get_db)):
+@app.post("/api/v1/employees", response_model=EmployeeResponse)
+def create_employee(req: EmployeeCreate, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("employee"), "write"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     req.username = req.username.lower() # Đảm bảo username luôn là chữ thường
     if db.query(models.Employee).filter(models.Employee.username == req.username).first():
         raise HTTPException(status_code=400, detail="Username đã tồn tại")
@@ -130,8 +143,19 @@ def create_employee(req: EmployeeCreate, db: Session = Depends(get_db)):
     
     return emp
 
-@app.put("/api/v1/employees/{emp_id}")
-def update_employee(emp_id: int, req: EmployeeUpdate, db: Session = Depends(get_db)):
+@app.get("/api/v1/employees/{emp_id}", response_model=EmployeeResponse)
+def get_employee(emp_id: int, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("employee"), "read"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
+    emp = db.query(models.Employee).filter(models.Employee.id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Không tìm thấy nhân viên")
+    return emp
+
+@app.put("/api/v1/employees/{emp_id}", response_model=EmployeeResponse)
+def update_employee(emp_id: int, req: EmployeeUpdate, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("employee"), "write"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     emp = db.query(models.Employee).filter(models.Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Không tìm thấy nhân viên")
@@ -159,7 +183,9 @@ def update_employee(emp_id: int, req: EmployeeUpdate, db: Session = Depends(get_
     return emp
 
 @app.delete("/api/v1/employees/{emp_id}")
-def delete_employee(emp_id: int, db: Session = Depends(get_db)):
+def delete_employee(emp_id: int, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("employee"), "write"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     emp = db.query(models.Employee).filter(models.Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Không tìm thấy nhân viên")
@@ -173,7 +199,9 @@ def delete_employee(emp_id: int, db: Session = Depends(get_db)):
     return {"message": "Đã xóa nhân viên"}
 
 @app.get("/api/v1/orders")
-def get_orders(db: Session = Depends(get_db)):
+def get_orders(current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("transaction"), "read"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     orders_with_customers = db.query(models.Order, models.Customer).join(models.Customer, models.Order.customer_id == models.Customer.id).filter(models.Order.status == "PENDING").order_by(models.Order.id.desc()).all()
     
     # Tính toán rủi ro gian lận
@@ -207,8 +235,42 @@ def get_orders(db: Session = Depends(get_db)):
     result.sort(key=lambda x: (not x["is_eligible"], x["order_date"]))
     return result
 
-@app.post("/api/v1/refund", response_model=RefundAPIResponse)
-async def request_refund(req: RefundRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def process_ai_and_email(
+    username: str, 
+    order_days_old: int, 
+    customer_email: str, 
+    customer_name: str, 
+    decision_str: str,
+    audit_log_id: int
+):
+    try:
+        content = await generate_refund_content(
+            username=username,
+            order_days_old=order_days_old,
+            customer_email=customer_email,
+            customer_name=customer_name,
+            decision=decision_str
+        )
+        
+        db = SessionLocal()
+        try:
+            log = db.query(models.AuditLog).filter(models.AuditLog.id == audit_log_id).first()
+            if log:
+                log.reason = content.reason
+                db.commit()
+        finally:
+            db.close()
+            
+        send_refund_email(
+            to_email=customer_email,
+            subject='Thông báo kết quả xử lý hoàn tiền - DX-AuthEngine',
+            body=content.email_template
+        )
+    except Exception as e:
+        print(f"Lỗi khi chạy ngầm AI và Email: {e}")
+
+@app.post("/api/v1/refund")
+async def request_refund(req: RefundRequest, background_tasks: BackgroundTasks, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
         # 1. Lấy thông tin đơn hàng từ Database
         order_info = db.query(models.Order, models.Customer).join(models.Customer, models.Order.customer_id == models.Customer.id).filter(models.Order.id == req.order_id).first()
@@ -220,44 +282,36 @@ async def request_refund(req: RefundRequest, background_tasks: BackgroundTasks, 
         delta = datetime.now() - order.order_date
         order_days_old = delta.days
         
-        # 3. Gửi cho AI và Casbin quyết định
-        decision = await process_refund_request(
-            username=req.username,
-            resource="transaction",
-            action="refund",
-            order_days_old=order_days_old,
-            customer_email=customer.email,
-            customer_name=customer.full_name
-        )
-        
-        background_tasks.add_task(send_refund_email, customer.email, 'Thông báo kết quả xử lý hoàn tiền - DX-AuthEngine', decision.email_template)
-        
-        # 4. Kiểm tra lịch sử gian lận
-        fraud_count = db.query(models.Order).filter(models.Order.customer_id == customer.id).count()
-        fraud_warning = fraud_count >= 3
-        
-        if decision.is_approved:
-            order.status = "REFUNDED"
-        else:
-            order.status = "REJECTED"
+        # 3. AuthZ: Casbin check
+        is_allowed = enforcer.enforce(Subject(current_user.username, current_user.role), Resource("transaction", order_days_old), "refund")
+        if not is_allowed:
+            raise HTTPException(status_code=403, detail="Không đủ quyền duyệt hoàn tiền")
             
+        # 4. Business Logic (Duyệt thành công)
+        order.status = "REFUNDED"
         audit_log = models.AuditLog(
             order_id=req.order_id,
-            employee_username=req.username,
-            decision='ALLOW' if decision.is_approved else 'DENY',
-            reason=decision.reason
+            employee_username=current_user.username,
+            decision='ALLOW',
+            reason='Đã duyệt bởi hệ thống'
         )
         db.add(audit_log)
         db.commit()
-
-        return RefundAPIResponse(
-            is_approved=decision.is_approved,
-            reason=decision.reason,
-            email_template=decision.email_template,
-            fraud_warning=fraud_warning,
+        db.refresh(audit_log)
+        
+        # 5. AI & Email (Chạy ngầm)
+        background_tasks.add_task(
+            process_ai_and_email,
+            username=current_user.username,
+            order_days_old=order_days_old,
             customer_email=customer.email,
-            customer_name=customer.full_name
+            customer_name=customer.full_name,
+            decision_str="ALLOW",
+            audit_log_id=audit_log.id
         )
+        
+        # 6. Response
+        return {"status": "success", "message": "Giao dịch thành công, email đang được gửi"}
     except HTTPException:
         raise
     except Exception as e:
@@ -268,8 +322,11 @@ def get_audit_logs(
     search: Optional[str] = None,
     customer: Optional[str] = None,
     employee: Optional[str] = None,
+    current_user: models.Employee = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("audit_log"), "read"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     query = db.query(models.AuditLog, models.Order, models.Customer) \
         .join(models.Order, models.AuditLog.order_id == models.Order.id) \
         .join(models.Customer, models.Order.customer_id == models.Customer.id)
@@ -307,8 +364,8 @@ def get_audit_logs(
     return result
 
 @app.put("/api/v1/audit-logs/{log_id}/decision")
-def update_audit_log_decision(log_id: int, req: AuditLogUpdateDecisionRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if req.requester.lower() != "admin":
+def update_audit_log_decision(log_id: int, req: AuditLogUpdateDecisionRequest, background_tasks: BackgroundTasks, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("audit_log"), "write"):
         raise HTTPException(status_code=403, detail="Chỉ admin mới có quyền thay đổi quyết định.")
     
     log = db.query(models.AuditLog).filter(models.AuditLog.id == log_id).first()
@@ -320,7 +377,7 @@ def update_audit_log_decision(log_id: int, req: AuditLogUpdateDecisionRequest, b
     
     old_decision = log.decision
     log.decision = req.new_decision
-    log.reason = f"[Cập nhật bởi {req.requester} từ {old_decision} -> {req.new_decision}] {req.reason}"
+    log.reason = f"[Cập nhật bởi {current_user.username} từ {old_decision} -> {req.new_decision}] {req.reason}"
     db.commit()
     
     email_subject = "Cập nhật kết quả xử lý hoàn tiền - DX-AuthEngine"
@@ -333,14 +390,18 @@ def update_audit_log_decision(log_id: int, req: AuditLogUpdateDecisionRequest, b
     return {"status": "success", "message": "Cập nhật quyết định thành công"}
 
 @app.get("/api/v1/roles")
-def get_roles():
+def get_roles(current_user: models.Employee = Depends(get_current_user)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("role"), "read"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     # Lấy danh sách mapping user-role hiện tại từ memory của Casbin
     policies = enforcer.get_grouping_policy()
     return [{"username": p[0], "role": p[1]} for p in policies]
 
 @app.put("/api/v1/roles")
-def update_role(req: RoleUpdateRequest):
-    if req.requester.lower() != "admin":
+def update_role(req: RoleUpdateRequest, current_user: models.Employee = Depends(get_current_user)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("role"), "write"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("audit_log"), "write"):
         raise HTTPException(status_code=403, detail="Chỉ có tài khoản 'admin' mới có quyền thay đổi Role.")
         
     # 1. Tước bỏ tất cả các role cũ của user
@@ -352,7 +413,9 @@ def update_role(req: RoleUpdateRequest):
     return {"status": "success", "message": f"Cập nhật thành công quyền của {req.username} thành {req.new_role}"}
 
 @app.get("/api/v1/settings/policy")
-def get_policy_limit():
+def get_policy_limit(current_user: models.Employee = Depends(get_current_user)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("policy"), "read"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     policies = enforcer.get_policy()
     for p in policies:
         if len(p) >= 4 and p[0] == "staff_sales" and p[1] == "transaction" and p[2] == "refund":
@@ -360,7 +423,9 @@ def get_policy_limit():
     return {"limit": 15}
 
 @app.put("/api/v1/settings/policy")
-def update_policy_limit(req: PolicyUpdateRequest):
+def update_policy_limit(req: PolicyUpdateRequest, current_user: models.Employee = Depends(get_current_user)):
+    if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("policy"), "write"):
+        raise HTTPException(status_code=403, detail="Không có quyền truy cập")
     old_policies = enforcer.get_filtered_policy(0, "staff_sales", "transaction", "refund")
     for old_policy in old_policies:
         enforcer.remove_policy(*old_policy)
@@ -370,8 +435,8 @@ def update_policy_limit(req: PolicyUpdateRequest):
     return {"status": "success"}
 
 @app.put("/api/v1/settings/change-password")
-def change_password(req: ChangePasswordRequest, db: Session = Depends(get_db)):
-    user = db.query(models.Employee).filter(models.Employee.username == req.username).first()
+def change_password(req: ChangePasswordRequest, current_user: models.Employee = Depends(get_current_user), db: Session = Depends(get_db)):
+    user = db.query(models.Employee).filter(models.Employee.username == current_user.username).first()
     if not user:
         raise HTTPException(status_code=404, detail="Không tìm thấy người dùng")
     
@@ -384,4 +449,4 @@ def change_password(req: ChangePasswordRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

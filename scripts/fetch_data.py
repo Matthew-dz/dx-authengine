@@ -3,10 +3,9 @@ import random
 from datetime import datetime, timedelta
 from app.database import SessionLocal, engine
 from app.models import Base, Order, Customer, Employee
-import hashlib
+from app.security import get_password_hash
 
-def get_password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+
 
 # Tự động tạo bảng nếu chưa có (dù main.py cũng có, thêm ở đây để chạy độc lập cũng được)
 Base.metadata.create_all(bind=engine)

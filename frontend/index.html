@@ -481,13 +481,14 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
                 body: JSON.stringify({ username: usernameInput, password: passwordInput })
             });
             
             if (res.ok) {
                 const data = await res.json();
                 localStorage.setItem('currentUser', JSON.stringify(data));
+                localStorage.setItem('access_token', data.access_token);
                 
                 Swal.fire({
                     icon: 'success', title: 'Đăng nhập thành công!', toast: true,
@@ -511,6 +512,7 @@
     document.getElementById('btnLogout').addEventListener('click', (e) => {
         e.preventDefault();
         localStorage.removeItem('currentUser');
+        localStorage.removeItem('access_token');
         checkLoginState();
     });
 
@@ -584,7 +586,7 @@
     // --- SETTINGS LOGIC ---
     async function loadSettings() {
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/v1/settings/policy');
+            const res = await fetch('http://127.0.0.1:8000/api/v1/settings/policy', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             if (res.ok) {
                 const data = await res.json();
                 document.getElementById('salesRefundLimit').value = data.limit;
@@ -604,7 +606,7 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/settings/policy', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
                 body: JSON.stringify({ new_limit: parseInt(limitVal) })
             });
             
@@ -642,7 +644,7 @@
         try {
             const res = await fetch('http://127.0.0.1:8000/api/v1/settings/change-password', {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
                 body: JSON.stringify({
                     username: currentUser.username,
                     old_password: oldPassword,
@@ -704,7 +706,7 @@
         const tbody = document.getElementById('employeesTableBody');
         tbody.innerHTML = '<tr><td colspan="8" class="text-center">Đang tải...</td></tr>';
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/v1/employees');
+            const res = await fetch('http://127.0.0.1:8000/api/v1/employees', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             const data = await res.json();
             tbody.innerHTML = '';
             data.forEach(emp => {
@@ -762,7 +764,7 @@
             const method = empId ? 'PUT' : 'POST';
             const res = await fetch(url, {
                 method: method,
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
                 body: JSON.stringify(payload)
             });
             if (res.ok) {
@@ -782,7 +784,7 @@
     window.deleteEmployee = async function(id) {
         if (!confirm('Bạn có chắc chắn muốn xóa nhân viên này?')) return;
         try {
-            const res = await fetch(`http://127.0.0.1:8000/api/v1/employees/${id}`, { method: 'DELETE' });
+            const res = await fetch(`http://127.0.0.1:8000/api/v1/employees/${id}`, { method: 'DELETE', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             if (res.ok) {
                 localStorage.setItem('flashMessage', 'Đã xóa nhân viên!');
             }
@@ -936,7 +938,7 @@
             if (employee) params.append('employee', employee);
             
             const queryString = params.toString() ? '?' + params.toString() : '';
-            const res = await fetch('http://127.0.0.1:8000/api/v1/audit-logs' + queryString);
+            const res = await fetch('http://127.0.0.1:8000/api/v1/audit-logs' + queryString, { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             const data = await res.json();
             auditLogs = data.map(log => {
                 const dateObj = new Date(log.created_at);
@@ -1001,7 +1003,7 @@
     async function loadOrders() {
         tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted"><span class="spinner-border spinner-border-sm"></span> Đang tải...</td></tr>';
         try {
-            const res = await fetch('http://127.0.0.1:8000/api/v1/orders');
+            const res = await fetch('http://127.0.0.1:8000/api/v1/orders', { headers: { 'Authorization': 'Bearer ' + localStorage.getItem('access_token') } });
             const data = await res.json();
             
             updateOrdersChart(); // Render the bar chart
@@ -1072,9 +1074,8 @@
         try {
             const response = await fetch('http://127.0.0.1:8000/api/v1/refund', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
                 body: JSON.stringify({
-                    username: username, // Tự động inject username
                     order_id: parseInt(orderId)
                 })
             });
@@ -1082,36 +1083,26 @@
             const data = await response.json();
             modal.hide();
             
-            // Lưu kết quả vào mảng Audit Logs toàn cục
-            loadLogs();
-            updateChart();
-            updateOrdersChart();
-            
-            // Hiện SweetAlert2
-            let htmlContent = `
-                <div class="text-start">
-                    <p><strong>Lý do:</strong> ${data.reason}</p>
-                    <hr>
-                    <div class="d-flex align-items-center mb-2">
-                        <span class="badge bg-primary fs-6 me-2"><i class="fas fa-user"></i> Khách hàng:</span>
-                        <strong class="text-dark fs-6">${data.customer_name} (${data.customer_email})</strong>
-                    </div>
-                    <div class="p-3 bg-light border rounded text-dark" style="font-size: 0.95em; white-space: pre-wrap; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">${data.email_template}</div>
-                </div>
-            `;
-            
-            if (data.fraud_warning) {
-                htmlContent = `<div class="alert alert-danger fw-bold fs-6"><i class="fas fa-exclamation-triangle"></i> Cảnh báo: Khách hàng này có dấu hiệu lạm dụng chính sách!</div>` + htmlContent;
+            if (response.ok) {
+                // Lưu kết quả vào mảng Audit Logs toàn cục
+                loadLogs();
+                updateChart();
+                updateOrdersChart();
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Thành công!',
+                    text: data.message || 'Giao dịch thành công, email đang được gửi'
+                }).then(() => {
+                    loadOrders();
+                });
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Thất bại!',
+                    text: data.detail || 'Có lỗi xảy ra'
+                });
             }
-
-            Swal.fire({
-                icon: data.is_approved ? 'success' : 'error',
-                title: data.is_approved ? 'ĐÃ DUYỆT!' : 'TỪ CHỐI!',
-                html: htmlContent,
-                width: '600px'
-            }).then(() => {
-                loadOrders();
-            });
         } catch (err) {
             Swal.fire({ icon: 'error', title: 'Lỗi', text: 'Không thể kết nối với Backend!' });
         } finally {
@@ -1160,9 +1151,8 @@
                 Swal.showLoading();
                 const res = await fetch(`http://127.0.0.1:8000/api/v1/audit-logs/${logId}/decision`, {
                     method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('access_token') },
                     body: JSON.stringify({
-                        requester: currentUser.username,
                         new_decision: formValues.decision,
                         reason: formValues.reason
                     })

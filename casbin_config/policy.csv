@@ -1,4 +1,6 @@
 p, admin, transaction, refund, 999999
 p, staff_sales, transaction, refund, 30
+p, staff_sales, transaction, read, 
+p, staff_sales, audit_log, read, 
 g, bob, staff_sales
 g, rayden, admin
