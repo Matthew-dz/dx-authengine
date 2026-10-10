@@ -55,26 +55,35 @@ def handle_refund_approved(event: RefundApprovedEvent) -> None:
         customer_email = data.get("customer_email")
         customer_name = data.get("customer_name")
         product_name = data.get("product_name")
+        amount = data.get("amount")
 
-        if (not customer_email) and order_id:
+        if (not customer_email or not product_name or not customer_name or not amount) and order_id:
             ord_obj = db.query(models.Order).filter(models.Order.id == order_id).first()
             if ord_obj:
                 product_name = product_name or ord_obj.product_name
+                if not amount:
+                    amount = ord_obj.price or 0.0
                 if ord_obj.customer:
-                    customer_email = ord_obj.customer.email
-                    customer_name = ord_obj.customer.full_name
+                    customer_email = customer_email or ord_obj.customer.email
+                    customer_name = customer_name or ord_obj.customer.full_name
 
         if customer_email:
             cust_name = customer_name or "Quý khách"
-            subj = "Thông báo kết quả xử lý hoàn tiền - DX-OS"
+            subj = f"Thông báo kết quả duyệt hoàn tiền đơn hàng #{order_id} ({product_name or ''}) - DX-OS"
             body = (
-                f"Kính gửi {cust_name},\n\n"
-                f"Yêu cầu hoàn tiền cho đơn hàng #{order_id} ({product_name or ''}) "
-                f"đã được phê duyệt thành công.\n\n"
-                f"Trân trọng,\nĐội ngũ CSKH DX-OS."
+                f"Kính gửi {cust_name},\n\nYêu cầu hoàn tiền cho đơn hàng #{order_id} ({product_name or ''}) đã được phê duyệt thành công.\n\nTrân trọng,\nĐội ngũ CSKH DX-OS."
             )
             try:
-                send_notification_email(customer_email, subj, body)
+                send_notification_email(
+                    to_email=customer_email,
+                    subject=subj,
+                    body=body,
+                    product_name=product_name or "",
+                    order_id=order_id,
+                    amount=amount or 0.0,
+                    customer_name=cust_name,
+                    decision="ALLOW"
+                )
                 logger.info(f"[EventHandler] Đã gửi email thông báo phê duyệt tới {customer_email}")
             except Exception as mail_err:
                 logger.error(f"[EventHandler] Lỗi khi gửi email trong handle_refund_approved: {mail_err}")

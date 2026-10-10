@@ -104,20 +104,42 @@ def update_audit_log_decision(
         raise HTTPException(status_code=404, detail="Không tìm thấy log")
         
     order = db.query(models.Order).filter(models.Order.id == log.order_id).first()
-    customer = db.query(models.Customer).filter(models.Customer.id == order.customer_id).first()
+    customer = db.query(models.Customer).filter(models.Customer.id == order.customer_id).first() if order else None
     
+    # Đồng bộ trạng thái RefundRequest nếu có
+    ref_req = db.query(models.RefundRequest).filter(models.RefundRequest.order_id == log.order_id).first()
+    if ref_req:
+        ref_req.status = "APPROVED" if req.new_decision == "ALLOW" else "REJECTED"
+        ref_req.reason = req.reason
+
     old_decision = log.decision
     log.decision = req.new_decision
     log.reason = f"[Cập nhật bởi {current_user.username} từ {old_decision} -> {req.new_decision}] {req.reason}"
     db.commit()
-    
-    email_subject = "Cập nhật kết quả xử lý hoàn tiền - DX-AuthEngine"
+
+    product_name = order.product_name if order else "Sản phẩm mua sắm"
+    order_id = order.id if order else log.order_id
+    customer_name = customer.full_name if customer else "Quý khách"
+    customer_email = customer.email if customer else ""
+    refund_amount = (ref_req.amount if ref_req and ref_req.amount else (order.price if order and order.price else 0.0))
+
+    email_subject = f"Cập nhật kết quả xử lý hoàn tiền đơn hàng #{order_id} ({product_name}) - DX-AuthEngine"
     if req.new_decision == "ALLOW":
-        email_body = f"Kính gửi {customer.full_name},\n\nYêu cầu hoàn tiền cho đơn hàng {order.product_name} của bạn đã được Admin phê duyệt (thay đổi quyết định).\nLý do: {req.reason}\n\nTrân trọng,\nĐội ngũ CSKH."
+        email_body = f"Kính gửi {customer_name},\n\nYêu cầu hoàn tiền cho đơn hàng #{order_id} ({product_name}) của bạn đã được Admin phê duyệt (thay đổi quyết định).\nLý do: {req.reason}\n\nTrân trọng,\nĐội ngũ CSKH."
     else:
-        email_body = f"Kính gửi {customer.full_name},\n\nYêu cầu hoàn tiền cho đơn hàng {order.product_name} của bạn đã bị từ chối.\nLý do: {req.reason}\n\nTrân trọng,\nĐội ngũ CSKH."
+        email_body = f"Kính gửi {customer_name},\n\nYêu cầu hoàn tiền cho đơn hàng #{order_id} ({product_name}) của bạn đã bị từ chối.\nLý do: {req.reason}\n\nTrân trọng,\nĐội ngũ CSKH."
         
-    background_tasks.add_task(send_refund_email, customer.email, email_subject, email_body)
+    background_tasks.add_task(
+        send_refund_email,
+        to_email=customer_email,
+        subject=email_subject,
+        body=email_body,
+        product_name=product_name,
+        order_id=order_id,
+        amount=refund_amount,
+        customer_name=customer_name,
+        decision=req.new_decision
+    )
     return StandardResponse(
         success=True,
         message="Cập nhật quyết định thành công",

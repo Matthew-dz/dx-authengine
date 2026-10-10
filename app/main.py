@@ -138,12 +138,20 @@ app.include_router(audit_logs_router)
 app.include_router(system_router)
 
 
+from fastapi.staticfiles import StaticFiles
+
+frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
+if os.path.isdir(frontend_dir):
+    app.mount("/frontend", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+
 @app.get("/")
 def root():
     return {
         "success": True,
         "message": "DX-AuthEngine Unified API is running",
-        "docs_url": "/docs"
+        "docs_url": "/docs",
+        "frontend_url": "/frontend/"
     }
 
 

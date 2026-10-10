@@ -249,6 +249,7 @@ class RefundService:
                     "product_name": order.product_name if order else None,
                     "customer_name": order.customer.full_name if (order and order.customer) else None,
                     "customer_email": order.customer.email if (order and order.customer) else None,
+                    "amount": refund.amount or (order.price if order else 0.0),
                 }
             )
             event_bus.publish(event, background_tasks)

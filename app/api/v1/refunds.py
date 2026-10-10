@@ -92,7 +92,8 @@ async def process_ai_and_email(
             product_name=product_name,
             order_id=order_id,
             amount=amount,
-            customer_name=customer_name
+            customer_name=customer_name,
+            decision=decision_str
         )
     except Exception as mail_err:
         print(f"[Email] Lỗi khi gửi mail: {mail_err}")
