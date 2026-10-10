@@ -4,10 +4,31 @@ from fastapi import APIRouter, Depends, Query
 from app import models
 from app.security import get_current_user
 from app.services.analytics_service import AnalyticsService
-from app.schemas import OverviewStatsResponse, EmployeePerformanceResponse
+from app.schemas import OverviewStatsResponse, EmployeePerformanceResponse, DashboardStatsResponse
 from app.schemas.common import StandardResponse
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
+
+
+@router.get("/dashboard", response_model=StandardResponse[DashboardStatsResponse])
+def get_dashboard(
+    current_user: models.Employee = Depends(get_current_user),
+    service: AnalyticsService = Depends()
+):
+    """
+    API Dashboard tổng hợp theo BFF Pattern (Bước 5.3), bao quát 4 trụ cột H-P-D-I:
+    - human: Quản trị nhân sự & tài khoản người dùng
+    - process: Tiến trình nghiệp vụ hoàn tiền
+    - data: Dữ liệu đơn hàng & tài chính
+    - intelligence: Trợ lý AI và giám sát hành vi
+    Tích hợp phân quyền dữ liệu sâu (Deep RBAC): Admin xem toàn bộ, Employee chỉ xem dữ liệu của mình.
+    """
+    dashboard_data = service.get_dashboard_data(current_user=current_user)
+    return StandardResponse(
+        success=True,
+        message="Lấy dữ liệu Dashboard tổng hợp thành công",
+        data=dashboard_data
+    )
 
 
 @router.get("/overview", response_model=StandardResponse[OverviewStatsResponse])

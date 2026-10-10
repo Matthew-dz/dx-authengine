@@ -7,7 +7,7 @@ from app import models
 from app.database import get_db
 from app.repositories.analytics_repository import AnalyticsRepository
 from app.agent import enforcer, Subject, Resource
-from app.schemas import OverviewStatsResponse, EmployeePerformanceResponse
+from app.schemas import OverviewStatsResponse, EmployeePerformanceResponse, DashboardStatsResponse
 
 
 class AnalyticsService:
@@ -223,3 +223,60 @@ class AnalyticsService:
             )
             results.append(perf)
         return results
+
+    def check_dashboard_permission(self, current_user: models.Employee) -> None:
+        """Kiểm tra quyền truy cập Dashboard qua Casbin (dashboard:read hoặc analytics:read)."""
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Yêu cầu đăng nhập")
+        sub = Subject(current_user.username, current_user.role)
+        enforcer.load_policy()
+        has_perm = enforcer.enforce(sub, Resource("dashboard"), "read") or enforcer.enforce(sub, Resource("analytics"), "read")
+        if not has_perm:
+            raise HTTPException(
+                status_code=403,
+                detail="Không có quyền truy cập Dashboard."
+            )
+
+    def get_dashboard_data(
+        self,
+        db_or_user: Any = None,
+        current_user: Optional[models.Employee] = None
+    ) -> DashboardStatsResponse:
+        """
+        Nghiệp vụ tổng hợp dữ liệu Dashboard BFF Pattern (4 trụ cột H-P-D-I).
+        - Phân quyền dữ liệu sâu (Deep RBAC):
+          + Role 'admin' hoặc 'manager': employee_id=None (truy xuất toàn bộ hệ thống).
+          + Role 'employee' (hoặc staff_sales/sale): employee_id=current_user.id (chỉ truy xuất dữ liệu của mình).
+        - Thu thập và tổng hợp 4 block: human, process, data, intelligence.
+        """
+        if isinstance(db_or_user, models.Employee):
+            user = db_or_user
+            session = self.db
+        elif hasattr(db_or_user, "query"):
+            session = db_or_user
+            user = current_user
+        else:
+            session = self.db
+            user = current_user or db_or_user
+
+        self.check_dashboard_permission(user)
+
+        # Phân quyền dữ liệu sâu (Deep RBAC):
+        # Admin / Manager gọi Repo với employee_id=None (Lấy toàn bộ)
+        # Employee gọi Repo với employee_id=current_user.id (Chỉ lấy của mình)
+        if user.role in ["admin", "manager"]:
+            target_employee_id = None
+        else:
+            target_employee_id = user.id
+
+        human_stats = self.repo.get_human_stats(db=session)
+        process_stats = self.repo.get_process_stats(db=session, employee_id=target_employee_id)
+        data_stats = self.repo.get_data_stats(db=session, employee_id=target_employee_id)
+        intel_stats = self.repo.get_intelligence_stats(db=session, employee_id=target_employee_id)
+
+        return DashboardStatsResponse(
+            human=human_stats,
+            process=process_stats,
+            data=data_stats,
+            intelligence=intel_stats
+        )

@@ -98,3 +98,6 @@ class EmployeePerformanceResponse(BaseModel):
     employee_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+from app.schemas.analytics import DashboardStatsResponse

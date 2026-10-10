@@ -77,6 +77,12 @@ def bootstrap_admin():
         # Nhóm Phân tích (Analytics): Chỉ Role Admin và Manager có quyền truy cập
         ("admin", "analytics", "read", ""),
         ("manager", "analytics", "read", ""),
+        # Nhóm Dashboard (BFF Pattern): Admin, Manager và Employee
+        ("admin", "dashboard", "read", ""),
+        ("manager", "dashboard", "read", ""),
+        ("employee", "dashboard", "read", ""),
+        ("staff_sales", "dashboard", "read", ""),
+        ("sale", "dashboard", "read", ""),
     ]
     current_policies = enforcer.get_policy()
     changed = False

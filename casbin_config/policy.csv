@@ -34,5 +34,10 @@ p, employee, refund, create,
 p, employee, refund, process, 
 p, sale, refund, create, 
 p, sale, refund, process, 
+p, admin, dashboard, read, 
+p, manager, dashboard, read, 
+p, staff_sales, dashboard, read, 
+p, employee, dashboard, read, 
+p, sale, dashboard, read, 
 g, bob, staff_sales
 g, rayden, admin
