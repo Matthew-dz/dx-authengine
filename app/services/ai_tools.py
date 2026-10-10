@@ -2,6 +2,7 @@ import json
 import time
 import logging
 from typing import Dict, Any, Optional
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app import models
@@ -30,6 +31,9 @@ class SecureAITools:
         self.db = db
         self.current_user = current_user
         self.session_id = session_id
+        from app.services.refund_service import RefundService
+        from app.repositories.refund_repository import RefundRepository
+        self.refund_service = RefundService(repo=RefundRepository(self.db), db=self.db)
 
     def _record_tool_audit(
         self,
@@ -225,7 +229,7 @@ class SecureAITools:
     def create_refund_request(self, args: CreateRefundArgs) -> str:
         """
         Tạo yêu cầu hoàn tiền mới cho đơn hàng (Write-Tool).
-        Được bọc lót Pydantic schema CreateRefundArgs và xử lý lỗi không dùng raise.
+        Gọi trực tiếp lớp RefundService (Internal API Consumer) thay vì HTTP request, tối ưu hiệu năng và tránh deadlock.
         """
         start_time = time.time()
         try:
@@ -235,62 +239,9 @@ class SecureAITools:
                 return "Thất bại: Tham số đầu vào không đúng định dạng CreateRefundArgs."
 
             input_dict = args.model_dump(mode="json")
-
-            # 1. Kiểm tra phân quyền Casbin
-            sub = Subject(self.current_user.username, self.current_user.role)
-            enforcer.load_policy()
-            has_perm = enforcer.enforce(sub, Resource("refund"), "create")
-            if not has_perm:
-                err_msg = "Thất bại: Bạn không có quyền tạo yêu cầu hoàn tiền."
-                self._record_tool_audit(
-                    tool_name="create_refund_request",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time
-                )
-                return err_msg
-
-            # 2. Kiểm tra nghiệp vụ: Đơn hàng có tồn tại không
-            order = self.db.query(models.Order).filter(models.Order.id == args.order_id).first()
-            if not order:
-                err_msg = f"Thất bại: Không tìm thấy đơn hàng #{args.order_id}."
-                self._record_tool_audit(
-                    tool_name="create_refund_request",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time
-                )
-                return err_msg
-
-            # 3. Kiểm tra nghiệp vụ: Trùng lặp yêu cầu đang chờ xử lý
-            existing = self.db.query(models.RefundRequest).filter(
-                models.RefundRequest.order_id == args.order_id,
-                models.RefundRequest.status.in_([models.RefundState.PENDING, models.RefundState.PROCESSING])
-            ).first()
-            if existing:
-                err_msg = f"Thất bại: Đơn hàng #{args.order_id} đã có yêu cầu hoàn tiền #{existing.id} đang chờ xử lý."
-                self._record_tool_audit(
-                    tool_name="create_refund_request",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time
-                )
-                return err_msg
-
-            refund_amount = args.amount if args.amount is not None else order.price
-            new_refund = models.RefundRequest(
-                order_id=args.order_id,
-                employee_id=self.current_user.id,
-                reason=args.reason,
-                amount=refund_amount,
-                status=models.RefundState.PENDING
-            )
-            self.db.add(new_refund)
-            self.db.commit()
-            self.db.refresh(new_refund)
+            from app.schemas import RefundRequestCreate
+            req = RefundRequestCreate(order_id=args.order_id, reason=args.reason, amount=args.amount)
+            new_refund = self.refund_service.create_refund_request(req=req, current_user=self.current_user)
 
             success_msg = f"Thành công: Đã tạo yêu cầu hoàn tiền #{new_refund.id} cho đơn hàng #{args.order_id}."
             self._record_tool_audit(
@@ -299,10 +250,20 @@ class SecureAITools:
                 output_result={"message": success_msg, "refund_id": new_refund.id},
                 action_status="SUCCESS",
                 execution_time=time.time() - start_time,
-                context_snapshot={"order_id": args.order_id, "reason": args.reason, "amount": refund_amount, "new_refund_id": new_refund.id}
+                context_snapshot={"order_id": args.order_id, "reason": args.reason, "amount": new_refund.amount, "new_refund_id": new_refund.id}
             )
             return success_msg
-
+        except HTTPException as e:
+            err_msg = f"Thất bại: {e.detail}"
+            self._record_tool_audit(
+                tool_name="create_refund_request",
+                input_context=args.model_dump(mode="json") if isinstance(args, CreateRefundArgs) else {"raw": str(args)},
+                output_result={"error": err_msg},
+                action_status="FAILED",
+                execution_time=time.time() - start_time,
+                context_snapshot={"error": err_msg}
+            )
+            return err_msg
         except Exception as e:
             self.db.rollback()
             logger.error(f"Lỗi ngoại lệ khi tạo yêu cầu hoàn tiền: {e}")
@@ -320,7 +281,7 @@ class SecureAITools:
     def approve_refund(self, args: ApproveRefundArgs) -> str:
         """
         Phê duyệt yêu cầu hoàn tiền (Write-Tool / Hành động nhạy cảm).
-        Kiểm tra quyền hạn Casbin (admin, manager), trạng thái hợp lệ, cập nhật trạng thái đơn hàng.
+        Gọi trực tiếp lớp RefundService (Internal API Consumer) thay vì HTTP request, tối ưu hiệu năng và tránh deadlock.
         """
         start_time = time.time()
         try:
@@ -330,66 +291,11 @@ class SecureAITools:
                 return "Thất bại: Tham số đầu vào không đúng định dạng ApproveRefundArgs."
 
             input_dict = args.model_dump(mode="json")
-
-            # 1. Kiểm tra quyền Casbin (approve)
-            sub = Subject(self.current_user.username, self.current_user.role)
-            enforcer.load_policy()
-            has_perm = enforcer.enforce(sub, Resource("refund"), "approve")
-            if not has_perm:
-                err_msg = "Thất bại: Bạn không có quyền phê duyệt yêu cầu hoàn tiền."
-                self._record_tool_audit(
-                    tool_name="approve_refund",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time,
-                    context_snapshot={"denied_user": self.current_user.username, "refund_id": args.refund_id}
-                )
-                return err_msg
-
-            # 2. Tìm yêu cầu hoàn tiền
-            refund = self.db.query(models.RefundRequest).filter(models.RefundRequest.id == args.refund_id).first()
-            if not refund:
-                err_msg = f"Thất bại: Không tìm thấy yêu cầu hoàn tiền #{args.refund_id}."
-                self._record_tool_audit(
-                    tool_name="approve_refund",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time
-                )
-                return err_msg
-
-            # 3. Kiểm tra Business Rules (Trạng thái phải là PENDING hoặc PROCESSING)
-            current_status = refund.status.value if hasattr(refund.status, "value") else str(refund.status)
-            if current_status not in ["PENDING", "PROCESSING"]:
-                err_msg = f"Thất bại: Yêu cầu hoàn tiền #{args.refund_id} đang ở trạng thái {current_status}, không thể phê duyệt."
-                self._record_tool_audit(
-                    tool_name="approve_refund",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time,
-                    context_snapshot={"current_status": current_status, "refund_id": args.refund_id}
-                )
-                return err_msg
-
-            # 4. Thực thi cập nhật
-            refund.status = models.RefundState.APPROVED
-            if refund.order:
-                refund.order.status = "REFUNDED"
-            if args.notes:
-                refund.notes = args.notes
-
-            # Ghi vết vào audit_logs chung
-            audit_entry = models.AuditLog(
-                order_id=refund.order_id,
-                employee_username=self.current_user.username,
-                decision="ALLOW",
-                reason=args.notes or "Phê duyệt thông qua AI Assistant Human-in-the-loop"
+            approved_refund = self.refund_service.approve_refund(
+                refund_id=args.refund_id,
+                notes=args.notes,
+                current_user=self.current_user
             )
-            self.db.add(audit_entry)
-            self.db.commit()
 
             success_msg = "Thành công: Đã cập nhật trạng thái."
             self._record_tool_audit(
@@ -398,10 +304,21 @@ class SecureAITools:
                 output_result={"message": success_msg, "refund_id": args.refund_id, "new_status": "APPROVED"},
                 action_status="SUCCESS",
                 execution_time=time.time() - start_time,
-                context_snapshot={"refund_id": args.refund_id, "order_id": refund.order_id, "new_status": "APPROVED", "notes": args.notes}
+                context_snapshot={"refund_id": args.refund_id, "order_id": approved_refund.order_id, "new_status": "APPROVED", "notes": args.notes}
             )
             return success_msg
 
+        except HTTPException as e:
+            err_msg = f"Thất bại: {e.detail}"
+            self._record_tool_audit(
+                tool_name="approve_refund",
+                input_context=args.model_dump(mode="json") if isinstance(args, ApproveRefundArgs) else {"raw": str(args)},
+                output_result={"error": err_msg},
+                action_status="FAILED",
+                execution_time=time.time() - start_time,
+                context_snapshot={"denied_user": self.current_user.username, "refund_id": getattr(args, "refund_id", None), "error": err_msg}
+            )
+            return err_msg
         except Exception as e:
             self.db.rollback()
             logger.error(f"Lỗi ngoại lệ khi phê duyệt hoàn tiền: {e}")
@@ -419,7 +336,7 @@ class SecureAITools:
     def reject_refund(self, args: RejectRefundArgs) -> str:
         """
         Từ chối yêu cầu hoàn tiền (Write-Tool / Hành động nhạy cảm).
-        Kiểm tra quyền hạn Casbin (admin, manager), trạng thái hợp lệ.
+        Gọi trực tiếp lớp RefundService (Internal API Consumer) thay vì HTTP request, tối ưu hiệu năng và tránh deadlock.
         """
         start_time = time.time()
         try:
@@ -429,63 +346,11 @@ class SecureAITools:
                 return "Thất bại: Tham số đầu vào không đúng định dạng RejectRefundArgs."
 
             input_dict = args.model_dump(mode="json")
-
-            # 1. Kiểm tra quyền Casbin (reject)
-            sub = Subject(self.current_user.username, self.current_user.role)
-            enforcer.load_policy()
-            has_perm = enforcer.enforce(sub, Resource("refund"), "reject")
-            if not has_perm:
-                err_msg = "Thất bại: Bạn không có quyền từ chối yêu cầu hoàn tiền."
-                self._record_tool_audit(
-                    tool_name="reject_refund",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time,
-                    context_snapshot={"denied_user": self.current_user.username, "refund_id": args.refund_id}
-                )
-                return err_msg
-
-            # 2. Tìm yêu cầu hoàn tiền
-            refund = self.db.query(models.RefundRequest).filter(models.RefundRequest.id == args.refund_id).first()
-            if not refund:
-                err_msg = f"Thất bại: Không tìm thấy yêu cầu hoàn tiền #{args.refund_id}."
-                self._record_tool_audit(
-                    tool_name="reject_refund",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time
-                )
-                return err_msg
-
-            # 3. Kiểm tra trạng thái
-            current_status = refund.status.value if hasattr(refund.status, "value") else str(refund.status)
-            if current_status not in ["PENDING", "PROCESSING"]:
-                err_msg = f"Thất bại: Yêu cầu hoàn tiền #{args.refund_id} đang ở trạng thái {current_status}, không thể từ chối."
-                self._record_tool_audit(
-                    tool_name="reject_refund",
-                    input_context=input_dict,
-                    output_result={"error": err_msg},
-                    action_status="FAILED",
-                    execution_time=time.time() - start_time,
-                    context_snapshot={"current_status": current_status, "refund_id": args.refund_id}
-                )
-                return err_msg
-
-            # 4. Thực thi cập nhật
-            refund.status = models.RefundState.REJECTED
-            if args.notes:
-                refund.notes = args.notes
-
-            audit_entry = models.AuditLog(
-                order_id=refund.order_id,
-                employee_username=self.current_user.username,
-                decision="DENY",
-                reason=args.notes or "Từ chối thông qua AI Assistant Human-in-the-loop"
+            rejected_refund = self.refund_service.reject_refund(
+                refund_id=args.refund_id,
+                notes=args.notes,
+                current_user=self.current_user
             )
-            self.db.add(audit_entry)
-            self.db.commit()
 
             success_msg = "Thành công: Đã cập nhật trạng thái."
             self._record_tool_audit(
@@ -494,10 +359,21 @@ class SecureAITools:
                 output_result={"message": success_msg, "refund_id": args.refund_id, "new_status": "REJECTED"},
                 action_status="SUCCESS",
                 execution_time=time.time() - start_time,
-                context_snapshot={"refund_id": args.refund_id, "order_id": refund.order_id, "new_status": "REJECTED", "notes": args.notes}
+                context_snapshot={"refund_id": args.refund_id, "order_id": rejected_refund.order_id, "new_status": "REJECTED", "notes": args.notes}
             )
             return success_msg
 
+        except HTTPException as e:
+            err_msg = f"Thất bại: {e.detail}"
+            self._record_tool_audit(
+                tool_name="reject_refund",
+                input_context=args.model_dump(mode="json") if isinstance(args, RejectRefundArgs) else {"raw": str(args)},
+                output_result={"error": err_msg},
+                action_status="FAILED",
+                execution_time=time.time() - start_time,
+                context_snapshot={"denied_user": self.current_user.username, "refund_id": getattr(args, "refund_id", None), "error": err_msg}
+            )
+            return err_msg
         except Exception as e:
             self.db.rollback()
             logger.error(f"Lỗi ngoại lệ khi từ chối hoàn tiền: {e}")
@@ -507,6 +383,7 @@ class SecureAITools:
                 input_context=args.model_dump(mode="json") if isinstance(args, RejectRefundArgs) else {"raw": str(args)},
                 output_result={"error": err_msg},
                 action_status="FAILED",
-                execution_time=time.time() - start_time
+                execution_time=time.time() - start_time,
+                context_snapshot={"error": str(e)}
             )
             return err_msg

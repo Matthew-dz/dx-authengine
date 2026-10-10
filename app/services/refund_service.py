@@ -77,21 +77,33 @@ class RefundService:
         """Nghiệp vụ tạo mới yêu cầu hoàn tiền (bắt đầu từ PENDING)."""
         # 1. Kiểm tra quyền Casbin: create
         if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("refund"), "create"):
-            raise HTTPException(status_code=403, detail="Không có quyền tạo yêu cầu hoàn tiền")
+            raise HTTPException(status_code=403, detail="Bạn không có quyền tạo yêu cầu hoàn tiền")
 
         # 2. Kiểm tra đơn hàng tồn tại
         order = self.repo.get_order_by_id(req.order_id)
         if not order:
             raise HTTPException(status_code=404, detail="Không tìm thấy đơn hàng")
 
+        # 2b. Kiểm tra trùng lặp yêu cầu đang chờ xử lý
+        existing = self.db.query(models.RefundRequest).filter(
+            models.RefundRequest.order_id == req.order_id,
+            models.RefundRequest.status.in_([models.RefundState.PENDING, models.RefundState.PROCESSING])
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Đơn hàng #{req.order_id} đã có yêu cầu hoàn tiền #{existing.id} đang chờ xử lý."
+            )
+
         try:
             # 3. Tạo bản ghi mới với trạng thái PENDING
+            refund_amount = req.amount if hasattr(req, "amount") and req.amount is not None else (order.price if order and order.price is not None else 0.0)
             refund = models.RefundRequest(
                 order_id=req.order_id,
                 reason=req.reason,
                 status=models.RefundState.PENDING,
                 employee_id=current_user.id,
-                amount=order.price if order and order.price is not None else 0.0
+                amount=refund_amount
             )
             created_refund = self.repo.create(refund)
 
@@ -125,7 +137,7 @@ class RefundService:
         """Nghiệp vụ xử lý yêu cầu hoàn tiền (PENDING -> PROCESSING)."""
         # 1. Kiểm tra quyền Casbin: process
         if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("refund"), "process"):
-            raise HTTPException(status_code=403, detail="Không có quyền xử lý yêu cầu hoàn tiền")
+            raise HTTPException(status_code=403, detail="Bạn không có quyền xử lý yêu cầu hoàn tiền")
 
         # 2. Kiểm tra bản ghi
         refund = self.repo.get_by_id(refund_id)
@@ -178,18 +190,18 @@ class RefundService:
         """Nghiệp vụ phê duyệt yêu cầu hoàn tiền (PROCESSING -> APPROVED) và đồng bộ Order."""
         # 1. Kiểm tra quyền Casbin: approve
         if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("refund"), "approve"):
-            raise HTTPException(status_code=403, detail="Không có quyền phê duyệt hoàn tiền")
+            raise HTTPException(status_code=403, detail="Bạn không có quyền phê duyệt hoàn tiền")
 
         # 2. Kiểm tra bản ghi
         refund = self.repo.get_by_id(refund_id)
         if not refund:
             raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu hoàn tiền")
 
-        # 3. State Machine check: Chỉ cho phép phê duyệt khi đang ở PROCESSING
-        if refund.status != models.RefundState.PROCESSING:
+        # 3. State Machine check: Chỉ cho phép phê duyệt khi đang ở PENDING hoặc PROCESSING
+        if refund.status not in [models.RefundState.PENDING, models.RefundState.PROCESSING]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Chỉ có thể phê duyệt yêu cầu ở trạng thái PROCESSING (hiện tại: {refund.status.value})"
+                detail=f"Chỉ có thể phê duyệt yêu cầu ở trạng thái PENDING hoặc PROCESSING (hiện tại: {refund.status.value}), không thể phê duyệt."
             )
 
         try:
@@ -243,18 +255,18 @@ class RefundService:
         """Nghiệp vụ từ chối yêu cầu hoàn tiền (PROCESSING -> REJECTED)."""
         # 1. Kiểm tra quyền Casbin: reject
         if not enforcer.enforce(Subject(current_user.username, current_user.role), Resource("refund"), "reject"):
-            raise HTTPException(status_code=403, detail="Không có quyền từ chối hoàn tiền")
+            raise HTTPException(status_code=403, detail="Bạn không có quyền từ chối hoàn tiền")
 
         # 2. Kiểm tra bản ghi
         refund = self.repo.get_by_id(refund_id)
         if not refund:
             raise HTTPException(status_code=404, detail="Không tìm thấy yêu cầu hoàn tiền")
 
-        # 3. State Machine check: Chỉ từ chối khi ở PROCESSING
-        if refund.status != models.RefundState.PROCESSING:
+        # 3. State Machine check: Chỉ từ chối khi ở PENDING hoặc PROCESSING
+        if refund.status not in [models.RefundState.PENDING, models.RefundState.PROCESSING]:
             raise HTTPException(
                 status_code=400,
-                detail=f"Chỉ có thể từ chối yêu cầu ở trạng thái PROCESSING (hiện tại: {refund.status.value})"
+                detail=f"Chỉ có thể từ chối yêu cầu ở trạng thái PENDING hoặc PROCESSING (hiện tại: {refund.status.value}), không thể từ chối."
             )
 
         try:

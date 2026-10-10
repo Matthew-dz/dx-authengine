@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from app.models import RefundState
+from app.schemas.common import StandardResponse
 
 class EmployeeResponse(BaseModel):
     id: int
@@ -47,9 +48,9 @@ class EmployeeUpdate(BaseModel):
 class RefundRequestCreate(BaseModel):
     order_id: int
     reason: Optional[str] = None
+    amount: Optional[float] = None
 
     model_config = ConfigDict(extra="forbid")
-
 
 
 class RefundStateUpdate(BaseModel):
@@ -62,7 +63,6 @@ class RefundActionPayload(BaseModel):
 
 
 class RefundRequestResponse(BaseModel):
-
     id: int
     order_id: int
     employee_id: Optional[int] = None
@@ -98,4 +98,3 @@ class EmployeePerformanceResponse(BaseModel):
     employee_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
-
