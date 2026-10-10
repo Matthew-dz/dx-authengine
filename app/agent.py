@@ -2,7 +2,7 @@ import casbin
 import os
 import json
 from pydantic import BaseModel
-from google.antigravity import Agent, LocalAgentConfig
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 # Tải biến môi trường (ví dụ GEMINI_API_KEY) từ file .env
@@ -46,16 +46,34 @@ Hãy trả về DUY NHẤT một chuỗi JSON chuẩn (không kèm theo markdown
     "email_template": "..."
 }}
 """
-    
-    config = LocalAgentConfig(
-        model="gemini-3.5-flash-lite",
-        system_instructions="Bạn là AI hỗ trợ viết nội dung hoàn tiền. Chỉ trả về chuỗi JSON chuẩn.",
-        api_key=os.getenv("GEMINI_API_KEY")
-    )
-    
-    async with Agent(config=config) as agent:
-        response = await agent.chat(prompt)
-        text_resp = await response.text()
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return RefundContent(
+            reason=f"Đơn hàng được {decision.lower()} dựa trên số ngày tạo ({order_days_old} ngày).",
+            email_template=f"Xin chào {customer_name},\n\nYêu cầu hoàn tiền của bạn đã được {decision.lower()}.\nTrân trọng!"
+        )
+
+    genai.configure(api_key=api_key)
+    try:
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction="Bạn là AI hỗ trợ viết nội dung hoàn tiền. Chỉ trả về chuỗi JSON chuẩn."
+        )
+        response = await model.generate_content_async(prompt)
+        text_resp = response.text
+    except Exception:
+        try:
+            model = genai.GenerativeModel(
+                model_name="gemini-2.5-flash",
+                system_instruction="Bạn là AI hỗ trợ viết nội dung hoàn tiền. Chỉ trả về chuỗi JSON chuẩn."
+            )
+            response = await model.generate_content_async(prompt)
+            text_resp = response.text
+        except Exception:
+            return RefundContent(
+                reason=f"Đơn hàng được {decision.lower()} dựa trên số ngày tạo ({order_days_old} ngày).",
+                email_template=f"Xin chào {customer_name},\n\nYêu cầu hoàn tiền của bạn đã được {decision.lower()}.\nTrân trọng!"
+            )
         
     # Xử lý text để loại bỏ markdown nếu AI lỡ sinh ra
     text_resp = text_resp.strip()
@@ -65,5 +83,11 @@ Hãy trả về DUY NHẤT một chuỗi JSON chuẩn (không kèm theo markdown
         text_resp = text_resp[:-3]
         
     # Parse JSON sang Pydantic Model
-    data = json.loads(text_resp.strip())
-    return RefundContent(**data)
+    try:
+        data = json.loads(text_resp.strip())
+        return RefundContent(**data)
+    except Exception:
+        return RefundContent(
+            reason=f"Đơn hàng được {decision.lower()} dựa trên số ngày tạo ({order_days_old} ngày).",
+            email_template=f"Xin chào {customer_name},\n\nYêu cầu hoàn tiền của bạn đã được {decision.lower()}.\nTrân trọng!"
+        )
